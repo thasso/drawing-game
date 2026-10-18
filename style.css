@@ -29,6 +29,9 @@ h1 span { color: #e9a62e; display: inline-block; margin-left: 10px; font-size: 3
 .icon-button[hidden] { display: none; }
 .picture-actions { display: flex; gap: 10px; }
 .top-bar .picture-actions { margin-left: auto; }
+.top-bar .icon-button { width: 56px; height: 56px; padding: 6px; border-radius: 18px; }
+.top-bar .icon-button svg { width: 40px; height: 40px; }
+.top-bar .icon-button:active { transform: scale(0.92); }
 .delete-button { color: #b44b58; }
 
 .drawing-area {
