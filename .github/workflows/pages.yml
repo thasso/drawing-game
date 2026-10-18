@@ -29,6 +29,7 @@ jobs:
           python3 scripts/validate-release.py
           python3 scripts/test-release-validator.py
           node scripts/test-storage.cjs
+          node scripts/test-coloring-templates.cjs
       - name: Package Pages site
         run: |
           mkdir -p _site
