@@ -20,6 +20,14 @@ let strokeOpacity = 1;
 const status = document.querySelector('#status');
 const gallery = document.querySelector('#gallery');
 const brushCursor = document.querySelector('#brush-cursor');
+const undoButton = document.querySelector('#undo-stroke');
+// Stroke undo keeps the paint that was under each completed stroke, newest last. Only the
+// stroke's padded bounding box is copied, so many small strokes fit and big ones push out the oldest.
+const undoLimit = 100;
+const undoByteBudget = 32 * 1024 * 1024;
+let undoSteps = [];
+let undoBytes = 0;
+let strokeBounds = null;
 let cursorPosition = null;
 let cursorTipKey = '';
 // Older app instances only know v1 and cannot overwrite the coordinated collection.
@@ -180,7 +188,15 @@ function blankPage(templateId = null, id = newPictureId()) {
   outlineContext.clearRect(0, 0, canvas.width, canvas.height);
   drawColoringOutline(outlineContext, activeTemplate);
   hasDrawing = false;
+  // Stroke history belongs to the pixels on this canvas, so it ends when they are replaced.
+  undoSteps = [];
+  undoBytes = 0;
+  updateStrokeUndo();
   renderPage();
+}
+
+function updateStrokeUndo() {
+  undoButton.disabled = loading || !undoSteps.length;
 }
 
 function captureDraft() {
@@ -203,6 +219,7 @@ function loadPicture(source) {
     return;
   }
   loading = true;
+  updateStrokeUndo();
   const image = new Image();
   image.onload = () => {
     blankPage(draft.template, draft.id);
@@ -211,9 +228,11 @@ function loadPicture(source) {
     hasDrawing = draft.hasDrawing !== false;
     renderPage();
     loading = false;
+    updateStrokeUndo();
   };
   image.onerror = () => {
     loading = false;
+    updateStrokeUndo();
     say('This picture could not be opened.');
   };
   image.src = draft.paint;
@@ -592,9 +611,56 @@ function startStroke(event) {
   strokeOpacity = Number(brushOpacity.value) / 100;
   activeBrush = makeBrush(brushType, Number(brushSize.value), color);
   dab(strokeContext, lastPoint.x, lastPoint.y, activeBrush);
+  strokeBounds = { left: lastPoint.x, top: lastPoint.y, right: lastPoint.x, bottom: lastPoint.y };
   renderStroke();
   hadDrawing = hasDrawing;
   hasDrawing = true;
+}
+
+function growStrokeBounds({ x, y }) {
+  strokeBounds.left = Math.min(strokeBounds.left, x);
+  strokeBounds.top = Math.min(strokeBounds.top, y);
+  strokeBounds.right = Math.max(strokeBounds.right, x);
+  strokeBounds.bottom = Math.max(strokeBounds.bottom, y);
+}
+
+function samePixels(left, right) {
+  const a = new Uint32Array(left.data.buffer), b = new Uint32Array(right.data.buffer);
+  for (let index = 0; index < a.length; index++) if (a[index] !== b[index]) return false;
+  return a.length === b.length;
+}
+
+// Every dab stays within about one brush size of its center (hearts reach furthest), plus antialiasing.
+function rememberStroke() {
+  const reach = Math.ceil(activeBrush.size * 1.25) + 4;
+  const left = Math.max(0, Math.floor(strokeBounds.left - reach));
+  const top = Math.max(0, Math.floor(strokeBounds.top - reach));
+  const width = Math.min(canvas.width, Math.ceil(strokeBounds.right + reach)) - left;
+  const height = Math.min(canvas.height, Math.ceil(strokeBounds.bottom + reach)) - top;
+  if (width <= 0 || height <= 0) return;
+  const before = baseContext.getImageData(left, top, width, height);
+  // Erasing blank paper or painting fully outside the start region changes nothing to undo.
+  if (samePixels(before, paintContext.getImageData(left, top, width, height))) return;
+  undoSteps.push({ before, left, top, hadDrawing });
+  undoBytes += before.data.length;
+  while (undoSteps.length > undoLimit || undoBytes > undoByteBudget) {
+    undoBytes -= undoSteps.shift().before.data.length;
+  }
+  updateStrokeUndo();
+}
+
+function undoStroke() {
+  showSheet(null);
+  // An unfinished stroke would be rebased onto the undone pixels, so it must end first.
+  if (loading || pointer !== null || !undoSteps.length) return;
+  const step = undoSteps.pop();
+  undoBytes -= step.before.data.length;
+  canvasVersion++;
+  paintContext.putImageData(step.before, step.left, step.top);
+  hasDrawing = step.hadDrawing;
+  renderPage();
+  updateStrokeUndo();
+  saveCurrentPicture();
 }
 
 // A second finger turns the touch into a pinch: drop the provisional paint before anything is saved.
@@ -610,6 +676,7 @@ function cancelStroke() {
 function finishStroke(event) {
   if (event.pointerId !== pointer) return;
   pointer = null;
+  rememberStroke();
   strokeWaiters.splice(0).forEach((resolve) => resolve());
   saveCurrentPicture();
 }
@@ -709,6 +776,7 @@ stage.addEventListener('pointermove', (event) => {
   for (const sample of points.length ? points : [event]) {
     const next = point(sample);
     paintLine(strokeContext, lastPoint, next, activeBrush);
+    growStrokeBounds(next);
     lastPoint = next;
   }
   renderStroke();
@@ -767,6 +835,7 @@ function showSheet(name) {
 for (const [key, [button]] of Object.entries(sheets)) {
   button.addEventListener('click', () => showSheet(openSheet === key ? null : key));
 }
+undoButton.addEventListener('click', undoStroke);
 document.addEventListener('pointerdown', (event) => {
   if (openSheet && !dock.contains(event.target) && !stage.contains(event.target)) showSheet(null);
 }, true);

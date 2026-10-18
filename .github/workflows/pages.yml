@@ -30,6 +30,7 @@ jobs:
           python3 scripts/test-release-validator.py
           node scripts/test-storage.cjs
           node scripts/test-coloring-templates.cjs
+          node scripts/test-undo.cjs
       - name: Package Pages site
         run: |
           mkdir -p _site

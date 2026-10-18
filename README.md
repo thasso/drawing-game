@@ -14,6 +14,8 @@ Open http://localhost:8080. Draw and pick a color. Drawings save into **My Pictu
 
 The brush and color buttons at the bottom open their choices only when needed. Pinch with two fingers to zoom and move around the page (or use the mouse wheel); the frame button shows the whole page again. Zooming only changes the view, not the saved picture.
 
+The orange undo arrow at the start of the bottom tools takes back the last finished stroke: everything painted from touching the page until lifting the finger, pen, or mouse, including a stamp or eraser stroke. Tap it again to go further back. Each open page keeps up to 100 strokes or 32 MiB of earlier pixels, whichever runs out first; a stroke uses the pixels of the rectangle around it, so long sweeping strokes use more, and at least five full-page strokes always fit. When either limit is reached, the oldest stroke can no longer be undone. Strokes that change nothing and paint dropped by a two-finger pinch are not counted. An undo saves like a stroke, including while earlier saves wait. Undoing the first stroke shows the page as it was before, but a picture already in **My Pictures** stays there. Stroke history is kept in memory only: reloading, starting a new page, opening a picture, or deleting the open picture clears it. There is no redo.
+
 Open **My Pictures** and use a picture's trash button to delete it. The undo arrow restores the most recently deleted picture, even after a reload. Deleting another picture replaces that undo history. Untouched blank pages are not added to the gallery.
 
 On coloring pages, each stroke stays in the region where it starts. Outlines stay above the paint. The eraser removes paint without removing the outline. Saved coloring pages retain separate paint and outline layers so they can be reopened and edited.
@@ -57,4 +59,4 @@ The service worker uses Cache Storage for app files. Bump the cache version in `
 - `sw.js`: versioned offline app cache.
 - `manifest.webmanifest`: install identity, scope, standalone display, and app icons.
 - `icons/`: local SVG icon source and generated PNG icons for install and iOS.
-- `scripts/`: release validator and Node tests for storage and coloring-page data.
+- `scripts/`: release validator and Node tests for storage, stroke undo, and coloring-page data.
