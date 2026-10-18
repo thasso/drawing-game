@@ -779,7 +779,7 @@ function renderGallery() {
     remove.className = 'delete-picture icon-button';
     remove.setAttribute('aria-label', 'Delete picture');
     remove.title = 'Delete picture';
-    remove.innerHTML = document.querySelector('#delete-button').innerHTML;
+    remove.append(document.querySelector('#delete-icon').content.cloneNode(true));
     remove.addEventListener('click', () => deletePicture(picture.id));
     card.append(button, remove);
     pictures.append(card);
@@ -831,7 +831,6 @@ function undoDelete() {
   if (gallery.open) renderGallery();
 }
 
-document.querySelector('#delete-button').addEventListener('click', () => deletePicture(currentId));
 document.querySelector('#undo-delete').addEventListener('click', undoDelete);
 document.querySelector('#undo-gallery-delete').addEventListener('click', undoDelete);
 updateUndoButtons();

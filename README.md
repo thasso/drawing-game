@@ -14,7 +14,7 @@ Open http://localhost:8080. Draw and pick a color. Drawings save into **My Pictu
 
 The brush and color buttons at the bottom open their choices only when needed. Pinch with two fingers to zoom and move around the page (or use the mouse wheel); the frame button shows the whole page again. Zooming only changes the view, not the saved picture.
 
-Use the trash button to delete the current picture or a picture in the gallery. The undo arrow restores the most recently deleted picture, even after a reload. Deleting another picture replaces that undo history. Untouched blank pages are not added to the gallery.
+Open **My Pictures** and use a picture's trash button to delete it. The undo arrow restores the most recently deleted picture, even after a reload. Deleting another picture replaces that undo history. Untouched blank pages are not added to the gallery.
 
 On coloring pages, each stroke stays in the region where it starts. Outlines stay above the paint. The eraser removes paint without removing the outline. Saved coloring pages retain separate paint and outline layers so they can be reopened and edited.
 
