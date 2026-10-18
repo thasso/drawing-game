@@ -10,7 +10,7 @@ Serve this directory with any static web server. For example:
 python3 -m http.server 8080
 ```
 
-Open http://localhost:8080. Draw and pick a color. Drawings save into **My Pictures** after each stroke; editing updates the same picture. Starting a new page or opening another picture saves the current one first, without a confirmation dialog. **New page** opens a visual chooser for a blank page, a flower, a butterfly, or a rocket.
+Open http://localhost:8080. Draw and pick a color. Drawings save into **My Pictures** after each stroke; editing updates the same picture. Starting a new page or opening another picture saves the current one first, without a confirmation dialog. The first tile in **My Pictures** is **New page**, which opens a visual chooser for a blank page, a flower, a butterfly, or a rocket.
 
 The brush and color buttons at the bottom open their choices only when needed. Pinch with two fingers to zoom and move around the page (or use the mouse wheel); the frame button shows the whole page again. Zooming only changes the view, not the saved picture.
 

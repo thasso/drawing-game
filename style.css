@@ -167,6 +167,9 @@ dialog::backdrop { background: #263f5480; }
 .picture { display: block; width: 100%; padding: 0; border: 2px solid #c9e0ea; border-radius: 8px; overflow: hidden; background: white; }
 .delete-picture { position: absolute; bottom: 6px; right: 6px; width: 44px; height: 44px; padding: 10px; border: none; border-radius: 12px; background: #fff0f2; color: #b44b58; }
 .picture img { width: 100%; display: block; aspect-ratio: 1; }
+.new-picture { display: grid; place-items: center; aspect-ratio: 1; background: #eef8fc; border-style: dashed; }
+.new-picture svg { width: 64px; height: 64px; }
+.new-picture:active { border-color: #57ad74; }
 .empty-gallery { grid-column: 1 / -1; padding: 28px 0; display: grid; place-items: center; color: #accfdf; }
 .empty-gallery svg { width: 72px; height: 72px; }
 

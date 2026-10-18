@@ -731,25 +731,19 @@ for (const template of [null, ...coloringTemplates]) {
     if (!store({ ...state, draft }, '')) return;
     blankPage(draft.template, draft.id);
     pagePicker.close();
+    gallery.close();
   });
   document.querySelector('#page-choices').append(button);
 }
-document.querySelector('#new-button').addEventListener('click', () => {
+const newButton = document.querySelector('#new-button');
+newButton.addEventListener('click', () => {
   if (!loading && pointer === null) pagePicker.showModal();
 });
 document.querySelector('#close-page-picker').addEventListener('click', () => pagePicker.close());
 
 function renderGallery() {
   const pictures = document.querySelector('#pictures');
-  pictures.replaceChildren();
-  if (!state.pictures.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-gallery';
-    empty.setAttribute('role', 'img');
-    empty.setAttribute('aria-label', 'No saved pictures yet');
-    empty.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m3 17 6-6 4 4 3-3 5 5"/><circle cx="16" cy="8" r="2"/></svg>';
-    pictures.append(empty);
-  }
+  pictures.replaceChildren(newButton);
   [...state.pictures].reverse().forEach((picture) => {
     const card = document.createElement('div');
     card.className = 'picture-card';
