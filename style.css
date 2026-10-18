@@ -51,6 +51,7 @@ h1 span { color: #e9a62e; display: inline-block; margin-left: 10px; font-size: 3
   overflow: hidden;
   outline: 1px dashed #accfdf;
   transform-origin: 0 0;
+  position: relative;
 }
 .paper.settling { transition: transform 0.25s ease-out; }
 canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
@@ -73,6 +74,8 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 .drawing-area.has-brush-cursor #canvas { cursor: none; }
 #brush-cursor { position: fixed; z-index: 1; pointer-events: none; translate: -50% -50%; }
 #brush-cursor[hidden] { display: none; }
+#sparkle { position: absolute; inset: 0; pointer-events: none; }
+#sparkle[hidden] { display: none; }
 
 .dock {
   position: absolute;

@@ -67,6 +67,7 @@ const colors = [
 ];
 let color = '#499cde';
 let brushType = 'round';
+let glitter = false;
 let activeBrush = null;
 let pointer = null;
 let pointerType = null;
@@ -183,7 +184,144 @@ function renderPage() {
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(paintCanvas, 0, 0);
   context.drawImage(outlineCanvas, 0, 0);
+  updateSparkle();
 }
+
+function seededRandom(seed) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let mixed = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// While glitter is on, fixed spots of the page twinkle one after another with a soft glow, wherever
+// there is paint. The glow lives on its own canvas above the page, kept off the outlines, so it is
+// never saved, never undone and never read back; saved pictures keep their still glitter.
+const sparkleCanvas = document.querySelector('#sparkle');
+const sparkleContext = sparkleCanvas.getContext('2d');
+const sparkleMask = document.createElement('canvas');
+sparkleMask.width = sparkleMask.height = canvas.width;
+const sparkleMaskContext = sparkleMask.getContext('2d');
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let sparkleSpots = null;
+let sparkleFrame = 0;
+let sparkleDrawn = 0;
+let sparkleDirty = true;
+
+function makeSparkleSprite(tint) {
+  const sprite = document.createElement('canvas');
+  sprite.width = sprite.height = 96;
+  const target = sprite.getContext('2d');
+  target.translate(48, 48);
+  const halo = target.createRadialGradient(0, 0, 0, 0, 0, 48);
+  halo.addColorStop(0, 'rgba(255,255,255,1)');
+  halo.addColorStop(0.12, `rgba(${tint},0.95)`);
+  halo.addColorStop(0.3, `rgba(${tint},0.5)`);
+  halo.addColorStop(0.6, `rgba(${tint},0.14)`);
+  halo.addColorStop(1, `rgba(${tint},0)`);
+  target.fillStyle = halo;
+  target.fillRect(-48, -48, 96, 96);
+  // Four long rays and four short ones, thin and tapering, like light caught on a cut edge.
+  target.fillStyle = '#ffffff';
+  for (let ray = 0; ray < 8; ray++) {
+    const [length, width] = ray % 2 ? [22, 2.2] : [47, 3.4];
+    target.beginPath();
+    target.moveTo(0, -width);
+    target.lineTo(length, 0);
+    target.lineTo(0, width);
+    target.fill();
+    target.rotate(Math.PI / 4);
+  }
+  return sprite;
+}
+
+// A sparse layer of bigger stars and a dense layer of small glints, so thin strokes catch light too.
+// Every spot keeps its place, size and rhythm; it lights up for about a third of its own cycle.
+function makeSparkleSpots() {
+  const random = seededRandom(7);
+  const sprites = ['255,255,255', '255,255,255', '255,240,190', '210,236,255', '255,214,238'].map(makeSparkleSprite);
+  const spots = [];
+  for (const [cell, smallest, largest, slowest] of [[34, 9, 16, 2.8], [110, 34, 64, 4.6]]) {
+    for (let y = 0; y < canvas.height; y += cell) {
+      for (let x = 0; x < canvas.width; x += cell) {
+        spots.push({
+          x: x + random() * cell,
+          y: y + random() * cell,
+          reach: smallest + random() * (largest - smallest),
+          period: slowest - 1.4 + random() * 1.4,
+          phase: random(),
+          lit: 0.26 + random() * 0.1,
+          turn: random() < 0.5 ? 0 : Math.PI / 4,
+          sprite: sprites[Math.floor(random() * sprites.length)],
+        });
+      }
+    }
+  }
+  return spots;
+}
+
+function showsSparkle() {
+  return glitter && hasDrawing && !loading && !document.hidden;
+}
+
+// Called whenever the page, glitter, loading or visibility changes.
+function updateSparkle() {
+  sparkleDirty = true;
+  if (!showsSparkle()) {
+    cancelAnimationFrame(sparkleFrame);
+    sparkleFrame = 0;
+    sparkleCanvas.hidden = true;
+    sparkleContext.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+  sparkleCanvas.hidden = false;
+  sparkleFrame ||= requestAnimationFrame(drawSparkle);
+}
+
+function drawSparkle(now) {
+  sparkleFrame = 0;
+  if (!showsSparkle()) return;
+  // Reduced motion draws one still glow per change; otherwise about 25 frames a second is plenty for a
+  // slow twinkle. A change between strokes (undo, opening) shows in the same frame as the paint.
+  const still = reducedMotion.matches;
+  if (!still) sparkleFrame = requestAnimationFrame(drawSparkle);
+  if (!still && now - sparkleDrawn < 40 && (!sparkleDirty || pointer !== null)) return;
+  if (gallery.open || pagePicker.open) return;
+  sparkleDrawn = now;
+  if (sparkleDirty) {
+    // Paint stacked three times lifts faint pencil, spray and bubble paint, so they can shine too.
+    sparkleDirty = false;
+    sparkleMaskContext.globalCompositeOperation = 'source-over';
+    sparkleMaskContext.clearRect(0, 0, canvas.width, canvas.height);
+    for (let layer = 0; layer < 3; layer++) sparkleMaskContext.drawImage(paintCanvas, 0, 0);
+    sparkleMaskContext.globalCompositeOperation = 'destination-out';
+    sparkleMaskContext.drawImage(outlineCanvas, 0, 0);
+  }
+  sparkleSpots ||= makeSparkleSpots();
+  const time = still ? 0 : now / 1000;
+  const target = sparkleContext;
+  target.clearRect(0, 0, canvas.width, canvas.height);
+  for (const spot of sparkleSpots) {
+    const cycle = (time / spot.period + spot.phase) % 1;
+    if (cycle >= spot.lit) continue;
+    const glow = Math.sin(Math.PI * cycle / spot.lit) ** 2;
+    const reach = spot.reach * (0.5 + 0.5 * glow);
+    const angle = spot.turn + (cycle / spot.lit - 0.5) * 0.3;
+    target.setTransform(Math.cos(angle), Math.sin(angle), -Math.sin(angle), Math.cos(angle), spot.x, spot.y);
+    target.globalAlpha = glow;
+    target.drawImage(spot.sprite, -reach, -reach, reach * 2, reach * 2);
+  }
+  target.setTransform(1, 0, 0, 1, 0, 0);
+  target.globalAlpha = 1;
+  target.globalCompositeOperation = 'destination-in';
+  target.drawImage(sparkleMask, 0, 0);
+  target.globalCompositeOperation = 'source-over';
+}
+
+document.addEventListener('visibilitychange', updateSparkle);
+reducedMotion.addEventListener('change', updateSparkle);
 
 function blankPage(templateId = null, id = newPictureId()) {
   currentId = id;
@@ -225,19 +363,21 @@ function loadPicture(source) {
   }
   loading = true;
   updateStrokeUndo();
+  updateSparkle();
   const image = new Image();
   image.onload = () => {
     blankPage(draft.template, draft.id);
     paintContext.drawImage(image, 0, 0, canvas.width, canvas.height);
     currentPicture = original;
     hasDrawing = draft.hasDrawing !== false;
-    renderPage();
     loading = false;
+    renderPage();
     updateStrokeUndo();
   };
   image.onerror = () => {
     loading = false;
     updateStrokeUndo();
+    updateSparkle();
     say('This picture could not be opened.');
   };
   image.src = draft.paint;
@@ -285,8 +425,6 @@ const amounts = [['One', 1, 1, 1.8], ['A few', 3, 0.45, 1.4], ['Lots', 7, 0.3, 1
 const brushAmounts = { stars: 0, hearts: 0, flowers: 0, bubbles: 1, confetti: 2 };
 const partyColors = ['#ed575e', '#f49b38', '#f3ce45', '#57ad74', '#499cde', '#9d79cb', '#ec8fba'];
 
-let glitter = false;
-
 function makeBrush(type, size, paint, amount = brushAmounts[type] ?? 0) {
   const stamp = stampTypes.includes(type);
   const spacing = Math.max(1, size * (stamp ? amounts[amount][3] : type === 'spray' ? 0.3 : 0.15));
@@ -305,13 +443,7 @@ glitterScratch.height = canvas.height;
 const glitterScratchContext = glitterScratch.getContext('2d');
 
 function makeGlitterTiles() {
-  let seed = 20240917;
-  const random = () => {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let mixed = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
-    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
-  };
+  const random = seededRandom(20240917);
   const [deep, bright, glints] = [0, 1, 2].map(() => {
     const tile = document.createElement('canvas');
     tile.width = tile.height = glitterSide;
@@ -333,8 +465,8 @@ function makeGlitterTiles() {
       const side = 2 + Math.floor(random() * 3);
       const at = [x + Math.floor(random() * (cell - side + 1)), y + Math.floor(random() * (cell - side + 1))];
       const roll = random();
-      if (roll < 0.3) fleck(deep, ...at, side, `rgba(0,0,0,${strength()})`);
-      else if (roll < 0.54) fleck(bright, ...at, side, `rgba(0,0,0,${strength()})`);
+      if (roll < 0.18) fleck(deep, ...at, side, `rgba(0,0,0,${strength()})`);
+      else if (roll < 0.48) fleck(bright, ...at, side, `rgba(0,0,0,${strength()})`);
       else if (roll < 0.6) fleck(glints, ...at, side, 'rgba(255,255,255,0.45)');
       else if (roll < 0.63) fleck(glints, ...at, side, iridescent[Math.floor(random() * 4)]);
       else if (roll < 0.67) fleck(glints, ...at, Math.max(1, side - 1), '#ffffff');
@@ -619,6 +751,7 @@ glitterButton.addEventListener('click', () => {
   glitterButton.setAttribute('aria-pressed', String(glitter));
   brushButton.classList.toggle('glitter', glitter);
   updateBrushPreview();
+  updateSparkle();
 });
 document.querySelector('#brushes').append(glitterButton);
 brushSize.addEventListener('input', updateBrushPreview);
