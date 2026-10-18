@@ -1,0 +1,79 @@
+:root {
+  color-scheme: light;
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+  color: #263f54;
+  background: #d9eff8;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible { outline: 3px solid #263f54; outline-offset: 5px; }
+
+.sketchbook {
+  height: 100svh;
+  min-height: 480px;
+  padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1400px;
+  margin: auto;
+}
+
+header, .actions, .gallery-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { font-size: clamp(19px, 3vw, 27px); letter-spacing: -1px; margin: 0; }
+h1 span { color: #e9a62e; display: inline-block; margin-left: 10px; font-size: 34px; vertical-align: middle; }
+.quiet-button, .save-button { border: 0; border-radius: 16px; padding: 12px 18px; min-height: 46px; font-weight: 700; }
+.quiet-button { background: #ffffffa6; color: #263f54; }
+.save-button { background: #263f54; color: white; }
+.icon-button { width: 48px; height: 48px; padding: 12px; display: grid; place-items: center; }
+.icon-button svg { width: 24px; height: 24px; }
+
+.drawing-area { flex: 1; min-height: 0; display: grid; place-items: center; container-type: size; }
+.paper {
+  height: min(100cqh, 100cqw);
+  aspect-ratio: 1;
+  max-width: 100%;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 5px 0 #accfdf, 0 12px 26px #57839b18;
+}
+canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+footer { width: min(100%, 780px); align-self: center; }
+.palette { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; padding: 6px 0 20px; }
+.swatch { width: 48px; height: 48px; border-radius: 50%; border: 4px solid transparent; background: var(--paint); background-clip: padding-box; position: relative; }
+.swatch[aria-pressed="true"] { outline: 3px solid #263f54; outline-offset: 1px; }
+.swatch[aria-pressed="true"]::after { content: ""; position: absolute; width: 10px; height: 10px; border-radius: 50%; background: white; top: 15px; left: 15px; }
+#status { font-size: 13px; text-align: center; margin: 0; }
+
+dialog { width: min(680px, calc(100% - 28px)); max-height: 85svh; border: none; border-radius: 24px; padding: 24px; color: #263f54; background: #f5fbfe; }
+dialog::backdrop { background: #263f5480; }
+.gallery-heading { justify-content: space-between; margin-bottom: 16px; }
+.gallery-heading h2 { margin: 0; font-size: 25px; }
+.pictures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.picture { padding: 0; border: 2px solid #c9e0ea; border-radius: 8px; overflow: hidden; background: white; }
+.picture img { width: 100%; display: block; aspect-ratio: 1; }
+.empty-gallery { grid-column: 1 / -1; padding: 28px 0; display: grid; place-items: center; color: #accfdf; }
+.empty-gallery svg { width: 72px; height: 72px; }
+
+@media (max-width: 540px) {
+  .sketchbook { gap: 12px; padding-left: 14px; padding-right: 14px; }
+  header .quiet-button { font-size: 13px; padding: 10px 12px; }
+  h1 span { display: none; }
+  .palette { gap: 7px; padding-bottom: 14px; }
+  .swatch { width: 36px; height: 36px; border-width: 3px; }
+  .swatch[aria-pressed="true"]::after { top: 11px; left: 11px; width: 8px; height: 8px; }
+  .actions { flex-wrap: wrap; }
+  #status { order: 3; width: 100%; min-height: 16px; }
+  .pictures { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-height: 540px) and (min-width: 541px) {
+  .sketchbook { min-height: 320px; gap: 8px; padding-top: 8px; padding-bottom: 8px; }
+  .palette { padding-bottom: 8px; }
+  .swatch { width: 36px; height: 36px; }
+  .swatch[aria-pressed="true"]::after { top: 9px; left: 9px; }
+}
