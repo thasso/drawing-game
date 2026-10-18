@@ -22,7 +22,9 @@ const gallery = document.querySelector('#gallery');
 const brushCursor = document.querySelector('#brush-cursor');
 let cursorPosition = null;
 let cursorTipKey = '';
-const storageKey = 'little-sketchbook-v1';
+// Older app instances only know v1 and cannot overwrite the coordinated collection.
+const storageKey = 'little-sketchbook-v2';
+const legacyStorageKey = 'little-sketchbook-v1';
 // Rows of eight: bright, light, then earthy and dark. Light colors get a rim and a dark selection dot.
 const colors = [
   ['Red', '#ed575e'],
@@ -58,6 +60,8 @@ let pointerType = null;
 let hadDrawing = false;
 let lastPoint = null;
 let loading = false;
+let saving = false;
+let currentPicture = null;
 let hasDrawing = false;
 let currentId = newPictureId();
 let state = { draft: null, pictures: [], deleted: null };
@@ -70,15 +74,91 @@ function say(message) {
   status.textContent = message;
 }
 
-function store(nextState, message) {
+function readState() {
+  const raw = localStorage.getItem(storageKey) ?? localStorage.getItem(legacyStorageKey);
+  if (raw === null) return { draft: null, pictures: [], deleted: null };
+  const saved = JSON.parse(raw);
+  if (!saved || !Array.isArray(saved.pictures)) throw new Error('Invalid sketchbook');
+  return {
+    ...saved,
+    // Deterministic IDs let independently opened legacy tabs agree before migration.
+    pictures: saved.pictures.map((picture, index) => ({ ...picture, id: picture.id || `legacy-${index}` })),
+  };
+}
+
+function samePicture(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function samePaint(left, right) {
+  return !!left && !!right && (left.paint || left.image) === (right.paint || right.image) &&
+    (left.template || null) === (right.template || null) &&
+    (left.hasDrawing !== false) === (right.hasDrawing !== false);
+}
+
+async function store(nextState, message, picture = null) {
+  if (saving) return false;
+  if (!navigator.locks?.request) {
+    say('Could not save safely. Use an updated browser on HTTPS or localhost.');
+    return false;
+  }
+  saving = true;
+  const before = state;
   try {
-    localStorage.setItem(storageKey, JSON.stringify(nextState));
-    state = nextState;
-    say(message);
-    return true;
+    return await navigator.locks.request(storageKey, () => {
+      // No await inside this transaction: all current app instances use this lock.
+      const fresh = readState();
+      const removed = before.pictures.filter((entry) => !nextState.pictures.some((next) => next.id === entry.id));
+      for (const entry of removed) {
+        const expected = entry.id === currentId ? currentPicture : entry;
+        if (!samePicture(expected, fresh.pictures.find((next) => next.id === entry.id))) {
+          say('This picture changed in another window. Reopen My Pictures before deleting.');
+          return false;
+        }
+      }
+      const undoChanged = !samePicture(before.deleted, nextState.deleted);
+      if (undoChanged && !samePicture(before.deleted, fresh.deleted)) {
+        say('Delete history changed in another window. Reopen My Pictures and try again.');
+        return false;
+      }
+      let pictures = fresh.pictures.filter((entry) => !removed.some((removedEntry) => removedEntry.id === entry.id));
+      let draft = nextState.draft;
+      let savedPicture = null;
+      let forked = false;
+      if (picture && !samePaint(picture, currentPicture)) {
+        const existing = fresh.pictures.find((entry) => entry.id === picture.id);
+        forked = !samePicture(existing || null, currentPicture);
+        savedPicture = { ...picture, id: forked ? newPictureId() : picture.id };
+        pictures = pictures.some((entry) => entry.id === savedPicture.id)
+          ? pictures.map((entry) => entry.id === savedPicture.id ? savedPicture : entry)
+          : [...pictures, savedPicture];
+        draft = { ...draft, id: savedPicture.id };
+      }
+      // Undo only adds its own picture; never replace an entry another tab edited.
+      for (const entry of nextState.pictures) {
+        if (picture?.id === entry.id || before.pictures.some((previous) => previous.id === entry.id)) continue;
+        if (pictures.some((existing) => existing.id === entry.id)) {
+          say('This picture changed in another window. Reopen My Pictures and try again.');
+          return false;
+        }
+        pictures.push(entry);
+      }
+      const merged = { ...fresh, draft, pictures, deleted: undoChanged ? nextState.deleted : fresh.deleted };
+      localStorage.setItem(storageKey, JSON.stringify(merged));
+      state = merged;
+      if (savedPicture) {
+        currentId = savedPicture.id;
+        currentPicture = savedPicture;
+      }
+      updateUndoButtons();
+      say(forked ? 'Saved a separate copy. This picture changed in another window.' : message);
+      return true;
+    });
   } catch {
     say('Could not save. Device storage may be full or blocked.');
     return false;
+  } finally {
+    saving = false;
   }
 }
 
@@ -91,6 +171,7 @@ function renderPage() {
 
 function blankPage(templateId = null, id = newPictureId()) {
   currentId = id;
+  currentPicture = null;
   activeTemplate = coloringTemplates.find((template) => template.id === templateId) || null;
   paintContext.clearRect(0, 0, canvas.width, canvas.height);
   outlineContext.clearRect(0, 0, canvas.width, canvas.height);
@@ -111,6 +192,9 @@ function captureDraft() {
 function loadPicture(source) {
   // Keep pictures from the original, single-layer sketchbook readable.
   const draft = typeof source === 'string' ? { paint: source, template: null, hasDrawing: true } : source;
+  const loadedPicture = state.pictures.find((picture) => picture.id === draft.id);
+  // A restored draft may predate an edit in another instance. Keep its own base.
+  const original = samePaint(draft, loadedPicture) ? loadedPicture : { ...draft };
   if (!draft.paint) {
     blankPage(draft.template, draft.id);
     return;
@@ -120,6 +204,7 @@ function loadPicture(source) {
   image.onload = () => {
     blankPage(draft.template, draft.id);
     paintContext.drawImage(image, 0, 0, canvas.width, canvas.height);
+    currentPicture = original;
     hasDrawing = draft.hasDrawing !== false;
     renderPage();
     loading = false;
@@ -133,11 +218,11 @@ function loadPicture(source) {
 
 blankPage();
 try {
-  const saved = JSON.parse(localStorage.getItem(storageKey));
+  const saved = readState();
   if (saved && Array.isArray(saved.pictures)) {
     state = {
       ...saved,
-      pictures: saved.pictures.map((picture) => ({ ...picture, id: picture.id || newPictureId() })),
+      pictures: saved.pictures,
     };
     if (state.draft) {
       const draft = typeof state.draft === 'string'
@@ -482,7 +567,7 @@ function renderStroke() {
 }
 
 function startStroke(event) {
-  if (loading || pointer !== null || event.button !== 0) return;
+  if (loading || saving || pointer !== null || event.button !== 0) return;
   event.preventDefault();
   pointer = event.pointerId;
   pointerType = event.pointerType;
@@ -683,8 +768,8 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && openSheet) showSheet(null);
 });
 
-function saveCurrentPicture() {
-  if (loading || pointer !== null) return false;
+async function saveCurrentPicture() {
+  if (loading || saving || pointer !== null) return false;
   const draft = captureDraft();
   const previous = state.pictures.find((picture) => picture.id === currentId);
   if (!hasDrawing && !activeTemplate && !previous) {
@@ -698,7 +783,7 @@ function saveCurrentPicture() {
   const pictures = previous
     ? state.pictures.map((entry) => entry.id === currentId ? picture : entry)
     : [...state.pictures, picture];
-  return store({ ...state, draft, pictures }, '');
+  return store({ ...state, draft, pictures }, '', picture);
 }
 
 const pagePicker = document.querySelector('#page-picker');
@@ -724,11 +809,11 @@ for (const template of [null, ...coloringTemplates]) {
     target.stroke();
   }
   button.append(preview);
-  button.addEventListener('click', () => {
-    if (loading || pointer !== null) return;
-    if (!saveCurrentPicture()) return;
+  button.addEventListener('click', async () => {
+    if (loading || saving || pointer !== null) return;
+    if (!await saveCurrentPicture()) return;
     const draft = { id: newPictureId(), paint: null, template: template?.id || null, hasDrawing: false };
-    if (!store({ ...state, draft }, '')) return;
+    if (!await store({ ...state, draft }, '')) return;
     blankPage(draft.template, draft.id);
     pagePicker.close();
     gallery.close();
@@ -737,7 +822,7 @@ for (const template of [null, ...coloringTemplates]) {
 }
 const newButton = document.querySelector('#new-button');
 newButton.addEventListener('click', () => {
-  if (!loading && pointer === null) pagePicker.showModal();
+  if (!loading && !saving && pointer === null) pagePicker.showModal();
 });
 document.querySelector('#close-page-picker').addEventListener('click', () => pagePicker.close());
 
@@ -754,9 +839,9 @@ function renderGallery() {
     image.src = picture.image;
     image.alt = 'Saved drawing';
     button.append(image);
-    button.addEventListener('click', () => {
-      if (loading || pointer !== null) return;
-      if (!saveCurrentPicture()) return;
+    button.addEventListener('click', async () => {
+      if (loading || saving || pointer !== null) return;
+      if (!await saveCurrentPicture()) return;
       const selected = state.pictures.find((entry) => entry.id === picture.id);
       if (!selected) return;
       const draft = {
@@ -765,7 +850,7 @@ function renderGallery() {
         template: selected.template || null,
         hasDrawing: selected.hasDrawing !== false,
       };
-      if (!store({ ...state, draft }, '')) return;
+      if (!await store({ ...state, draft }, '')) return;
       loadPicture(draft);
       gallery.close();
     });
@@ -785,15 +870,15 @@ function updateUndoButtons() {
   document.querySelector('#undo-gallery-delete').hidden = !state.deleted;
 }
 
-function deletePicture(id) {
-  if (loading || pointer !== null) return;
+async function deletePicture(id) {
+  if (loading || saving || pointer !== null) return;
   const current = id === currentId;
   const previous = state.pictures.find((picture) => picture.id === id);
   const deleted = current
     ? { ...captureDraft(), image: canvas.toDataURL('image/png'), created: previous?.created || Date.now() }
     : previous;
   if (!deleted || (current && !hasDrawing && !activeTemplate && !previous)) return;
-  if (!store({
+  if (!await store({
     ...state,
     draft: current ? null : state.draft,
     pictures: state.pictures.filter((picture) => picture.id !== id),
@@ -804,8 +889,8 @@ function deletePicture(id) {
   if (gallery.open) renderGallery();
 }
 
-function undoDelete() {
-  if (!state.deleted || loading || pointer !== null) return;
+async function undoDelete() {
+  if (!state.deleted || loading || saving || pointer !== null) return;
   const picture = state.deleted;
   const restoreOnCanvas = !hasDrawing && !activeTemplate;
   const draft = {
@@ -814,7 +899,7 @@ function undoDelete() {
     template: picture.template || null,
     hasDrawing: picture.hasDrawing !== false,
   };
-  if (!store({
+  if (!await store({
     ...state,
     pictures: [...state.pictures, picture],
     deleted: null,
@@ -829,9 +914,9 @@ document.querySelector('#undo-delete').addEventListener('click', undoDelete);
 document.querySelector('#undo-gallery-delete').addEventListener('click', undoDelete);
 updateUndoButtons();
 
-document.querySelector('#gallery-button').addEventListener('click', () => {
-  if (loading || pointer !== null) return;
-  saveCurrentPicture();
+document.querySelector('#gallery-button').addEventListener('click', async () => {
+  if (loading || saving || pointer !== null) return;
+  await saveCurrentPicture();
   renderGallery();
   gallery.showModal();
 });

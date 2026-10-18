@@ -25,7 +25,10 @@ jobs:
         with:
           node-version: 22
       - name: Validate static runtime
-        run: python3 scripts/validate-release.py
+        run: |
+          python3 scripts/validate-release.py
+          python3 scripts/test-release-validator.py
+          node scripts/test-storage.cjs
       - name: Package Pages site
         run: |
           mkdir -p _site

@@ -53,9 +53,14 @@ for reference in references:
         raise SystemExit(f"Missing referenced runtime asset: {reference}")
 
 # A Pages project site is hosted below /drawing-game/, so runtime paths must be relative.
-for path in ("index.html", "manifest.webmanifest", "sw.js"):
+runtime_text = {"index.html", "manifest.webmanifest", "sw.js"}
+for reference in references:
+    path = local_path(reference)
+    if path and Path(path).suffix in {".html", ".js", ".css", ".svg", ".webmanifest"}:
+        runtime_text.add(path.removeprefix("./"))
+for path in sorted(runtime_text):
     text = (ROOT / path).read_text()
-    if re.search(r"https?://(?:localhost|127\\.0\\.0\\.1|[^\"']*github\\.io)", text):
+    if re.search(r"(?:https?:)?//(?:localhost\b|127\.0\.0\.1\b|(?:[a-z0-9-]+\.)*github\.io\b)", text, re.I):
         raise SystemExit(f"Development/host-specific origin in {path}")
 
 print(f"Validated JS syntax, manifest, {len(references)} local asset references, and project-subpath-safe runtime URLs.")
