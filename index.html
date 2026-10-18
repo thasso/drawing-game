@@ -38,13 +38,22 @@
 
       <nav class="dock" aria-label="Drawing tools">
         <button id="brush-button" class="dock-button" aria-label="Brushes" title="Brushes" aria-expanded="false" aria-controls="brush-sheet">
-          <canvas id="brush-button-preview" width="120" height="120" aria-hidden="true"></canvas>
+          <svg class="paint-icon" viewBox="0 0 40 40" fill="none" stroke="#263f54" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m18 19 12-13a4 4 0 0 1 6 6L23 24Z" fill="#f3ce45"/>
+            <path d="m16 18 9 9-5 5-9-9Z" fill="#accfdf"/>
+            <path d="M12 23C4 24 9 31 3 34c9 5 20-1 16-8Z" fill="var(--paint, #499cde)"/>
+            <path d="M9 33q5 0 6-4" stroke="white"/>
+          </svg>
         </button>
         <div id="brush-sheet" class="sheet" hidden>
           <div id="brushes" class="brushes" role="group" aria-label="Brush types"></div>
         </div>
         <button id="properties-button" class="dock-button" aria-label="Brush size and opacity" title="Brush size and opacity" aria-expanded="false" aria-controls="properties-sheet">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 7h6M15 7h6M3 17h2M11 17h10"/><circle cx="12" cy="7" r="3"/><circle cx="8" cy="17" r="3"/></svg>
+          <svg class="paint-icon" viewBox="0 0 40 40" fill="none" stroke="#263f54" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 9S3 17 3 21a6 6 0 0 0 12 0c0-4-6-12-6-12Z" fill="#499cde" fill-opacity="0.3"/>
+            <path d="M26 4S16 17 16 25a10 10 0 0 0 20 0C36 17 26 4 26 4Z" fill="#499cde"/>
+            <path d="M21 26q0 5 5 5" stroke="white" stroke-width="2.5"/>
+          </svg>
         </button>
         <div id="properties-sheet" class="sheet" hidden>
           <div class="brush-controls">

@@ -98,6 +98,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 .dock-button[aria-expanded="true"] { border-color: #263f54; background: white; transform: translateY(-4px); }
 .dock-button canvas { cursor: pointer; }
 .dock-button svg { width: 30px; height: 30px; }
+.dock-button .paint-icon { width: 40px; height: 40px; }
 .current-color { width: 42px; height: 42px; border-radius: 50%; background: var(--paint); box-shadow: inset 0 0 0 4px #ffffff8c; }
 
 .sheet {

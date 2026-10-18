@@ -232,11 +232,11 @@ function drawBrushPreview(preview, type, size, opacity) {
 }
 
 const brushPreview = document.querySelector('#brush-preview');
-const brushButtonPreview = document.querySelector('#brush-button-preview');
+const brushButton = document.querySelector('#brush-button');
 const colorButton = document.querySelector('#color-button');
 function updateBrushPreview() {
   drawBrushPreview(brushPreview, brushType, Number(brushSize.value) / 3, Number(brushOpacity.value) / 100);
-  drawBrushPreview(brushButtonPreview, brushType, Number(brushSize.value) / 3, Number(brushOpacity.value) / 100);
+  brushButton.style.setProperty('--paint', color);
   colorButton.style.setProperty('--paint', color);
   document.querySelectorAll('.brush-choice canvas').forEach((preview) => {
     drawBrushPreview(preview, preview.dataset.brush, 22, 1);
