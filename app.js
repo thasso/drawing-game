@@ -736,7 +736,16 @@ document.querySelector('#gallery-button').addEventListener('click', () => {
 document.querySelector('#close-gallery').addEventListener('click', () => gallery.close());
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((registration) => {
+    const installing = registration.installing;
+    installing?.addEventListener('statechange', () => {
+      if (installing.state === 'redundant' && !registration.active) {
+        say('Offline setup failed. Reconnect and reload to try again.');
+      }
+    });
+  }).catch(() => {
     say('Offline setup failed. Reconnect and reload to try again.');
   });
+} else if (!window.isSecureContext) {
+  say('Install and offline mode need an HTTPS address.');
 }

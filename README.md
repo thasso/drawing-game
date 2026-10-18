@@ -18,11 +18,23 @@ Use the trash button to delete the current picture or a picture in the gallery. 
 
 On coloring pages, each stroke stays in the region where it starts. Outlines stay above the paint. The eraser removes paint without removing the outline. Saved coloring pages retain separate paint and outline layers so they can be reopened and edited.
 
+## Install on iPhone or iPad
+
+1. Host this directory on any HTTPS static host. Keep every file and the `icons/` folder. No server-side application or build step is needed.
+2. Open the HTTPS address in Safari while online.
+3. Tap Share, then **Add to Home Screen**. Enable **Open as Web App** if iOS offers that option, then tap **Add**.
+4. Open Sketchbook from the home screen while still online so the initial offline cache can finish installing.
+5. Switch to airplane mode and reopen the home-screen app to check offline launch, drawing, coloring pages, saving, and reopening pictures on your device.
+
+The app opens in standalone mode, without Safari's address bar. On Android or desktop, use the browser's Install app or Add to Home Screen command.
+
+The current HTTP Tailscale preview cannot provide offline installation. Use an HTTPS static host or a private Tailscale Serve HTTPS address. HTTP and HTTPS addresses have separate storage: drawings from the HTTP preview do not automatically move to the HTTPS app. Install first, then create drawings in the home-screen app; do not assume Safari and an installed iOS web app share the same saved pictures.
+
 ## Offline and storage
 
-Host these files on an HTTPS static host for phone and iPad use. After the first online visit finishes caching the app, the service worker allows it to reopen offline at the same address. Localhost also supports service workers; a plain HTTP address on your local network does not. Opening `index.html` as a file is not supported.
+After the first online visit finishes caching the app, its service worker serves the page, scripts, styles, manifest, and icons from Cache Storage. Brushes and outline artwork are bundled locally. Drawing and saving do not require a network connection. Localhost also supports service workers; a plain HTTP address on your local network does not. Opening `index.html` as a file is not supported.
 
-Drawings are PNG data URLs in `localStorage`, scoped to this browser and origin. They are not uploaded or synced. Changing the hostname or port uses separate storage. Clearing site data removes drawings; private browsing and device storage limits can prevent saving. The app reports save failures. The app retains one deleted picture for undo. This PoC has no export yet.
+Drawings are PNG data URLs in `localStorage`, scoped to this browser and origin. They are not uploaded or synced. Changing the hostname or port uses separate storage. Clearing site data removes drawings; private browsing and device storage limits can prevent saving. The app reports save failures. The app retains one deleted picture for undo. This PoC has no export yet, so drawings have no separate backup. iOS or the browser can remove site storage under storage pressure; home-screen installation is not a guarantee of permanent storage.
 
 The service worker uses Cache Storage for app files. Bump the cache version in `sw.js` when changing them, then close existing tabs and reopen to activate an update.
 
@@ -32,4 +44,6 @@ The service worker uses Cache Storage for app files. Bump the cache version in `
 - `style.css`: responsive drawing screen.
 - `app.js`: brushes, pointer drawing, coloring layers, and local picture storage.
 - `coloring.js`: local outline artwork and coloring-region clipping.
-- `sw.js`: offline app cache.
+- `sw.js`: versioned offline app cache.
+- `manifest.webmanifest`: install identity, scope, standalone display, and app icons.
+- `icons/`: local SVG icon source and generated PNG icons for install and iOS.
