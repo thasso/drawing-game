@@ -25,6 +25,21 @@
 
       <footer>
         <div id="palette" class="palette" role="group" aria-label="Paint colors"></div>
+        <div class="brush-controls">
+          <svg class="brush-preview" viewBox="0 0 120 120" role="img" aria-label="Brush preview">
+            <path id="brush-preview-stroke" d="M25 82C25 22 95 98 95 38" fill="none" stroke-linecap="round"/>
+          </svg>
+          <div class="brush-sliders">
+            <label class="brush-control" title="Brush size">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="4" cy="12" r="2"/><circle cx="17" cy="12" r="6"/></svg>
+              <input id="brush-size" type="range" min="4" max="100" step="2" value="16" aria-label="Brush size">
+            </label>
+            <label class="brush-control" title="Opacity">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2S4 10 4 15a8 8 0 0 0 16 0c0-5-8-13-8-13Z"/><path d="M12 2v21a8 8 0 0 0 8-8c0-5-8-13-8-13Z" fill="currentColor" stroke="none"/></svg>
+              <input id="brush-opacity" type="range" min="10" max="100" step="5" value="100" aria-label="Opacity">
+            </label>
+          </div>
+        </div>
         <div class="actions">
           <button id="new-button" class="quiet-button icon-button" aria-label="New page" title="New page">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M12 12v6M9 15h6"/></svg>

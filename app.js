@@ -1,5 +1,14 @@
 const canvas = document.querySelector('#canvas');
 const context = canvas.getContext('2d');
+const strokeCanvas = document.createElement('canvas');
+const baseCanvas = document.createElement('canvas');
+strokeCanvas.width = baseCanvas.width = canvas.width;
+strokeCanvas.height = baseCanvas.height = canvas.height;
+const strokeContext = strokeCanvas.getContext('2d');
+const baseContext = baseCanvas.getContext('2d');
+const brushSize = document.querySelector('#brush-size');
+const brushOpacity = document.querySelector('#brush-opacity');
+let strokeOpacity = 1;
 const status = document.querySelector('#status');
 const gallery = document.querySelector('#gallery');
 const storageKey = 'little-sketchbook-v1';
@@ -69,6 +78,16 @@ try {
   say('Saved pictures could not be read. Storage may be blocked.');
 }
 
+const brushPreview = document.querySelector('#brush-preview-stroke');
+function updateBrushPreview() {
+  brushPreview.setAttribute('stroke', color);
+  brushPreview.setAttribute('stroke-width', Number(brushSize.value) / 3);
+  brushPreview.setAttribute('opacity', Number(brushOpacity.value) / 100);
+}
+brushSize.addEventListener('input', updateBrushPreview);
+brushOpacity.addEventListener('input', updateBrushPreview);
+updateBrushPreview();
+
 for (const [name, paint] of colors) {
   const button = document.createElement('button');
   button.className = 'swatch';
@@ -77,6 +96,7 @@ for (const [name, paint] of colors) {
   button.setAttribute('aria-pressed', String(paint === color));
   button.addEventListener('click', () => {
     color = paint;
+    updateBrushPreview();
     document.querySelectorAll('.swatch').forEach((swatch) => {
       swatch.setAttribute('aria-pressed', String(swatch === button));
     });
@@ -92,20 +112,31 @@ function point(event) {
   };
 }
 
+function renderStroke() {
+  context.drawImage(baseCanvas, 0, 0);
+  context.globalAlpha = strokeOpacity;
+  context.drawImage(strokeCanvas, 0, 0);
+  context.globalAlpha = 1;
+}
+
 canvas.addEventListener('pointerdown', (event) => {
   if (loading || pointer !== null || event.button !== 0) return;
   event.preventDefault();
   pointer = event.pointerId;
   canvas.setPointerCapture(pointer);
   lastPoint = point(event);
-  context.fillStyle = color;
-  context.strokeStyle = color;
-  context.lineWidth = 16;
-  context.lineCap = 'round';
-  context.lineJoin = 'round';
-  context.beginPath();
-  context.arc(lastPoint.x, lastPoint.y, 8, 0, Math.PI * 2);
-  context.fill();
+  baseContext.drawImage(canvas, 0, 0);
+  strokeContext.clearRect(0, 0, canvas.width, canvas.height);
+  strokeOpacity = Number(brushOpacity.value) / 100;
+  strokeContext.fillStyle = color;
+  strokeContext.strokeStyle = color;
+  strokeContext.lineWidth = Number(brushSize.value);
+  strokeContext.lineCap = 'round';
+  strokeContext.lineJoin = 'round';
+  strokeContext.beginPath();
+  strokeContext.arc(lastPoint.x, lastPoint.y, strokeContext.lineWidth / 2, 0, Math.PI * 2);
+  strokeContext.fill();
+  renderStroke();
   hasDrawing = true;
   say('Drawing…');
 });
@@ -115,12 +146,13 @@ canvas.addEventListener('pointermove', (event) => {
   const points = event.getCoalescedEvents?.() || [event];
   for (const sample of points.length ? points : [event]) {
     const next = point(sample);
-    context.beginPath();
-    context.moveTo(lastPoint.x, lastPoint.y);
-    context.lineTo(next.x, next.y);
-    context.stroke();
+    strokeContext.beginPath();
+    strokeContext.moveTo(lastPoint.x, lastPoint.y);
+    strokeContext.lineTo(next.x, next.y);
+    strokeContext.stroke();
     lastPoint = next;
   }
+  renderStroke();
 });
 
 function finishStroke(event) {

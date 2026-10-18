@@ -47,6 +47,17 @@ footer { width: min(100%, 780px); align-self: center; }
 .swatch { width: 48px; height: 48px; border-radius: 50%; border: 4px solid transparent; background: var(--paint); background-clip: padding-box; position: relative; }
 .swatch[aria-pressed="true"] { outline: 3px solid #263f54; outline-offset: 1px; }
 .swatch[aria-pressed="true"]::after { content: ""; position: absolute; width: 10px; height: 10px; border-radius: 50%; background: white; top: 15px; left: 15px; }
+.brush-controls { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; padding: 12px; background: #ffffff80; border-radius: 20px; }
+.brush-preview { width: 112px; height: 112px; flex-shrink: 0; background: white; border-radius: 12px; }
+.brush-sliders { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.brush-control { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brush-control svg { width: 32px; height: 32px; flex-shrink: 0; }
+.brush-control input { appearance: none; -webkit-appearance: none; width: 100%; min-width: 0; height: 56px; margin: 0; background: transparent; cursor: pointer; }
+.brush-control input::-webkit-slider-runnable-track { height: 14px; border-radius: 7px; background: #accfdf; }
+.brush-control input::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 36px; height: 36px; margin-top: -11px; border: 4px solid white; border-radius: 50%; background: #263f54; box-shadow: 0 2px 4px #263f5426; }
+.brush-control input::-moz-range-track { height: 14px; border-radius: 7px; background: #accfdf; }
+.brush-control input::-moz-range-thumb { box-sizing: border-box; width: 36px; height: 36px; border: 4px solid white; border-radius: 50%; background: #263f54; box-shadow: 0 2px 4px #263f5426; }
+.brush-control input:focus-visible { outline: 3px solid #263f54; outline-offset: 3px; border-radius: 8px; }
 #status { font-size: 13px; text-align: center; margin: 0; }
 
 dialog { width: min(680px, calc(100% - 28px)); max-height: 85svh; border: none; border-radius: 24px; padding: 24px; color: #263f54; background: #f5fbfe; }
