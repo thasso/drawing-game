@@ -1,4 +1,4 @@
-const cacheName = 'little-sketchbook-v15';
+const cacheName = 'little-sketchbook-v17';
 const appFiles = [
   './',
   './index.html',

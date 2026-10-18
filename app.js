@@ -23,17 +23,34 @@ const brushCursor = document.querySelector('#brush-cursor');
 let cursorPosition = null;
 let cursorTipKey = '';
 const storageKey = 'little-sketchbook-v1';
+// Rows of eight: bright, light, then earthy and dark. Light colors get a rim and a dark selection dot.
 const colors = [
-  ['Ink', '#263f54'],
   ['Red', '#ed575e'],
   ['Orange', '#f49b38'],
-  ['Yellow', '#f3ce45'],
+  ['Yellow', '#f3ce45', true],
+  ['Lime', '#a6cf4b'],
   ['Green', '#57ad74'],
+  ['Teal', '#36b3a8'],
   ['Blue', '#499cde'],
   ['Purple', '#9d79cb'],
   ['Pink', '#ec8fba'],
+  ['Rose', '#f8cde0', true],
+  ['Peach', '#ffc9a8', true],
+  ['Lemon', '#fff1a3', true],
+  ['Mint', '#c4ecd2', true],
+  ['Sky', '#c4e3f8', true],
+  ['Lilac', '#ddcdf3', true],
+  ['White', '#ffffff', true],
+  ['Light skin', '#f6d1b1', true],
+  ['Tan', '#d9a070'],
+  ['Brown', '#95603a'],
+  ['Dark brown', '#5a3824'],
+  ['Forest', '#2f7d4f'],
+  ['Ink', '#263f54'],
+  ['Grey', '#9aa6af'],
+  ['Black', '#222428'],
 ];
-let color = colors[5][1];
+let color = '#499cde';
 let brushType = 'round';
 let activeBrush = null;
 let pointer = null;
@@ -143,12 +160,72 @@ const brushTypes = [
   ['spray', 'Spray paint'],
   ['rainbow', 'Rainbow'],
   ['stars', 'Stars'],
+  ['hearts', 'Hearts'],
+  ['flowers', 'Flowers'],
+  ['bubbles', 'Bubbles'],
+  ['confetti', 'Confetti'],
   ['eraser', 'Eraser'],
 ];
 
-function makeBrush(type, size, paint) {
-  const spacing = Math.max(1, size * (type === 'stars' ? 1.8 : type === 'spray' ? 0.3 : 0.15));
-  return { type, size, color: paint, spacing, untilNext: spacing };
+// Stamp brushes paint one, a few or lots of shapes at each step: [pieces, piece size, step].
+const stampTypes = ['stars', 'hearts', 'flowers', 'bubbles', 'confetti'];
+const amounts = [['One', 1, 1, 1.8], ['A few', 3, 0.45, 1.4], ['Lots', 7, 0.3, 1.1]];
+const brushAmounts = { stars: 0, hearts: 0, flowers: 0, bubbles: 1, confetti: 2 };
+const partyColors = ['#ed575e', '#f49b38', '#f3ce45', '#57ad74', '#499cde', '#9d79cb', '#ec8fba'];
+
+function makeBrush(type, size, paint, amount = brushAmounts[type] ?? 0) {
+  const stamp = stampTypes.includes(type);
+  const spacing = Math.max(1, size * (stamp ? amounts[amount][3] : type === 'spray' ? 0.3 : 0.15));
+  return { type, size, color: paint, amount, spacing, untilNext: spacing };
+}
+
+// One shape filling a circle of `radius` around the origin.
+function stampShape(target, type, radius, paint) {
+  target.fillStyle = paint;
+  target.beginPath();
+  if (type === 'stars') {
+    for (let index = 0; index < 10; index++) {
+      const angle = index * Math.PI / 5 - Math.PI / 2;
+      const reach = radius * (index % 2 ? 0.43 : 1);
+      target.lineTo(Math.cos(angle) * reach, Math.sin(angle) * reach);
+    }
+    target.fill();
+  } else if (type === 'hearts') {
+    target.moveTo(0, radius * 0.8);
+    target.bezierCurveTo(-radius * 1.35, -radius * 0.1, -radius * 0.65, -radius * 1.15, 0, -radius * 0.5);
+    target.bezierCurveTo(radius * 0.65, -radius * 1.15, radius * 1.35, -radius * 0.1, 0, radius * 0.8);
+    target.fill();
+  } else if (type === 'flowers') {
+    for (let petal = 0; petal < 5; petal++) {
+      const angle = petal * Math.PI * 2 / 5;
+      target.moveTo(Math.cos(angle) * radius * 0.58 + radius * 0.42, Math.sin(angle) * radius * 0.58);
+      target.arc(Math.cos(angle) * radius * 0.58, Math.sin(angle) * radius * 0.58, radius * 0.42, 0, Math.PI * 2);
+    }
+    target.fill();
+    target.fillStyle = paint === '#f3ce45' || paint === '#fff1a3' ? '#f49b38' : '#f3ce45';
+    target.beginPath();
+    target.arc(0, 0, radius * 0.3, 0, Math.PI * 2);
+    target.fill();
+  } else if (type === 'bubbles') {
+    const rim = Math.max(1, radius * 0.13);
+    target.arc(0, 0, radius - rim / 2, 0, Math.PI * 2);
+    target.globalAlpha = 0.22;
+    target.fill();
+    target.globalAlpha = 1;
+    target.strokeStyle = paint;
+    target.lineWidth = rim;
+    target.stroke();
+    target.beginPath();
+    target.arc(0, 0, radius * 0.6, Math.PI * 1.1, Math.PI * 1.45);
+    target.strokeStyle = '#ffffff';
+    target.lineCap = 'round';
+    target.stroke();
+  } else {
+    // Confetti: a tilted paper strip, mostly in the chosen color.
+    target.fillStyle = Math.random() < 0.45 ? paint : partyColors[Math.floor(Math.random() * partyColors.length)];
+    target.rotate(Math.random() * Math.PI);
+    target.fillRect(-radius * 0.85, -radius * 0.38, radius * 1.7, radius * 0.76);
+  }
 }
 
 function dab(target, x, y, brush) {
@@ -177,16 +254,21 @@ function dab(target, x, y, brush) {
       target.arc(0, (index - 2.5) * size / 6, size / 10, 0, Math.PI * 2);
       target.fill();
     });
-  } else if (brush.type === 'stars') {
-    target.beginPath();
-    for (let index = 0; index < 10; index++) {
-      const angle = index * Math.PI / 5 - Math.PI / 2;
-      const radius = size * (index % 2 ? 0.32 : 0.75);
-      if (index === 0) target.moveTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
-      else target.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+  } else if (stampTypes.includes(brush.type)) {
+    const [, count, scale] = amounts[brush.amount];
+    // Several pieces sit around a ring (lots keeps one in the middle) so they rarely pile up.
+    const turn = Math.random() * Math.PI * 2;
+    const ring = count === 7 ? 6 : count;
+    for (let index = 0; index < count; index++) {
+      const onRing = count > 1 && !(count === 7 && index === 6);
+      const angle = turn + index * Math.PI * 2 / ring;
+      const reach = onRing ? size * 0.75 * (1 - scale) : 0;
+      target.save();
+      target.translate(Math.cos(angle) * reach, Math.sin(angle) * reach);
+      if (count > 1) target.rotate((Math.random() - 0.5) * 0.8);
+      stampShape(target, brush.type, size * 0.75 * scale * (count > 1 ? 0.8 + Math.random() * 0.2 : 1), brush.color);
+      target.restore();
     }
-    target.closePath();
-    target.fill();
   } else {
     target.beginPath();
     target.arc(0, 0, size / 2, 0, Math.PI * 2);
@@ -237,6 +319,7 @@ function drawBrushPreview(preview, type, size, opacity) {
 const brushPreview = document.querySelector('#brush-preview');
 const brushButton = document.querySelector('#brush-button');
 const colorButton = document.querySelector('#color-button');
+const amountChoices = document.querySelector('#amounts');
 function updateBrushPreview() {
   drawBrushPreview(brushPreview, brushType, Number(brushSize.value) / 3, Number(brushOpacity.value) / 100);
   brushButton.style.setProperty('--paint', color);
@@ -244,8 +327,34 @@ function updateBrushPreview() {
   document.querySelectorAll('.brush-choice canvas').forEach((preview) => {
     drawBrushPreview(preview, preview.dataset.brush, 22, 1);
   });
+  amountChoices.hidden = !stampTypes.includes(brushType);
+  if (!amountChoices.hidden) {
+    amountChoices.querySelectorAll('canvas').forEach((picture, amount) => {
+      const target = picture.getContext('2d');
+      target.setTransform(1, 0, 0, 1, 0, 0);
+      target.clearRect(0, 0, picture.width, picture.height);
+      dab(target, picture.width / 2, picture.height / 2, makeBrush(brushType, picture.width * 0.6, color, amount));
+      picture.parentElement.setAttribute('aria-pressed', String(amount === brushAmounts[brushType]));
+    });
+  }
   refreshBrushCursor();
 }
+
+amounts.forEach(([name], amount) => {
+  const button = document.createElement('button');
+  button.className = 'amount-choice';
+  button.title = name;
+  button.setAttribute('aria-label', name);
+  const picture = document.createElement('canvas');
+  picture.width = picture.height = 120;
+  picture.setAttribute('aria-hidden', 'true');
+  button.append(picture);
+  button.addEventListener('click', () => {
+    brushAmounts[brushType] = amount;
+    updateBrushPreview();
+  });
+  amountChoices.append(button);
+});
 
 for (const [type, name] of brushTypes) {
   const button = document.createElement('button');
@@ -276,9 +385,9 @@ brushSize.addEventListener('input', updateBrushPreview);
 brushOpacity.addEventListener('input', updateBrushPreview);
 updateBrushPreview();
 
-for (const [name, paint] of colors) {
+for (const [name, paint, light] of colors) {
   const button = document.createElement('button');
-  button.className = 'swatch';
+  button.className = light ? 'swatch light' : 'swatch';
   button.style.setProperty('--paint', paint);
   button.setAttribute('aria-label', name);
   button.setAttribute('aria-pressed', String(paint === color));
@@ -318,9 +427,9 @@ function refreshBrushCursor() {
   const brush = pointer !== null ? activeBrush : makeBrush(brushType, Number(brushSize.value), color);
   const opacity = pointer !== null ? strokeOpacity : Number(brushOpacity.value) / 100;
   const scale = bounds.width / canvas.width;
-  const extent = brush.size * (brush.type === 'stars' || brush.type === 'spray' ? 1.5 : brush.type === 'rainbow' || brush.type === 'marker' ? 1.06 : 1);
+  const extent = brush.size * (stampTypes.includes(brush.type) || brush.type === 'spray' ? 1.5 : brush.type === 'rainbow' || brush.type === 'marker' ? 1.06 : 1);
   const side = extent * scale + 12;
-  const key = `${brush.type}-${brush.size}-${brush.color}-${opacity}-${scale}`;
+  const key = `${brush.type}-${brush.amount}-${brush.size}-${brush.color}-${opacity}-${scale}`;
   if (key !== cursorTipKey) {
     cursorTipKey = key;
     const target = brushCursor.getContext('2d');
@@ -746,6 +855,4 @@ if ('serviceWorker' in navigator) {
   }).catch(() => {
     say('Offline setup failed. Reconnect and reload to try again.');
   });
-} else if (!window.isSecureContext) {
-  say('Install and offline mode need an HTTPS address.');
 }

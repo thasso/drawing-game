@@ -111,6 +111,8 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
   translate: -50% 0;
   width: max-content;
   max-width: calc(100vw - 24px);
+  max-height: calc(100svh - 120px - env(safe-area-inset-bottom));
+  overflow-y: auto;
   padding: 14px;
   border-radius: 24px;
   background: white;
@@ -130,6 +132,13 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 .swatch { width: 56px; height: 56px; border-radius: 50%; border: 4px solid transparent; background: var(--paint); background-clip: padding-box; position: relative; }
 .swatch[aria-pressed="true"] { outline: 4px solid #263f54; outline-offset: 2px; }
 .swatch[aria-pressed="true"]::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border-radius: 50%; background: white; }
+.swatch.light { box-shadow: inset 0 0 0 2px #c9d6de; }
+.swatch.light[aria-pressed="true"]::after { background: #263f54; }
+.amounts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; width: min(270px, calc(100vw - 52px)); }
+.amounts[hidden] { display: none; }
+.amount-choice { aspect-ratio: 1; padding: 4px; border: 3px solid transparent; border-radius: 18px; background: #eef8fc; }
+.amount-choice[aria-pressed="true"] { border-color: #263f54; background: white; }
+.amount-choice canvas { cursor: pointer; }
 .brush-controls { display: flex; align-items: center; gap: 12px; padding: 8px; background: #eef8fc; border-radius: 18px; width: min(270px, calc(100vw - 52px)); }
 .brush-preview { width: 76px; height: 76px; flex-shrink: 0; background: white; border-radius: 12px; cursor: default; }
 .brush-sliders { display: grid; flex: 1; min-width: 0; }
@@ -165,7 +174,7 @@ dialog::backdrop { background: #263f5480; }
 
 @media (min-width: 700px) and (min-height: 640px) {
   h1 { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 25px; letter-spacing: -1px; margin: 0; }
-  .brushes { grid-template-columns: repeat(7, 60px); }
+  .brushes { grid-template-columns: repeat(6, 60px); }
   .palette { grid-template-columns: repeat(8, 56px); }
 }
 
@@ -176,6 +185,8 @@ dialog::backdrop { background: #263f5480; }
   .dock { flex-direction: column; left: auto; right: max(12px, env(safe-area-inset-right)); top: 50%; bottom: auto; transform: translateY(-50%); }
   .dock-button[aria-expanded="true"] { transform: translateX(-4px); }
   .sheet { bottom: auto; left: auto; top: 50%; right: calc(100% + 14px); translate: 0 -50%; max-height: calc(100svh - 16px); overflow-y: auto; }
+  .brushes { grid-template-columns: repeat(6, 60px); }
+  .palette { grid-template-columns: repeat(8, 56px); gap: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
