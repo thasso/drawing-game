@@ -1,5 +1,5 @@
-const cacheName = 'little-sketchbook-v7';
-const appFiles = ['./', './index.html', './style.css', './app.js'];
+const cacheName = 'little-sketchbook-v9';
+const appFiles = ['./', './index.html', './style.css', './coloring.js', './app.js'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(cacheName).then((cache) => cache.addAll(appFiles)));

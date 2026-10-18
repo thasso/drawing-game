@@ -6,6 +6,14 @@ strokeCanvas.width = baseCanvas.width = canvas.width;
 strokeCanvas.height = baseCanvas.height = canvas.height;
 const strokeContext = strokeCanvas.getContext('2d');
 const baseContext = baseCanvas.getContext('2d');
+const paintCanvas = document.createElement('canvas');
+const outlineCanvas = document.createElement('canvas');
+paintCanvas.width = outlineCanvas.width = canvas.width;
+paintCanvas.height = outlineCanvas.height = canvas.height;
+const paintContext = paintCanvas.getContext('2d');
+const outlineContext = outlineCanvas.getContext('2d');
+let activeTemplate = null;
+let activeRegion = -1;
 const brushSize = document.querySelector('#brush-size');
 const brushOpacity = document.querySelector('#brush-opacity');
 let strokeOpacity = 1;
@@ -29,7 +37,12 @@ let pointer = null;
 let lastPoint = null;
 let loading = false;
 let hasDrawing = false;
-let state = { draft: null, pictures: [] };
+let currentId = newPictureId();
+let state = { draft: null, pictures: [], deleted: null };
+
+function newPictureId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
 
 function say(message) {
   status.textContent = message;
@@ -47,34 +60,72 @@ function store(nextState, message) {
   }
 }
 
-function blankPage() {
+function renderPage() {
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(paintCanvas, 0, 0);
+  context.drawImage(outlineCanvas, 0, 0);
+}
+
+function blankPage(templateId = null, id = newPictureId()) {
+  currentId = id;
+  activeTemplate = coloringTemplates.find((template) => template.id === templateId) || null;
+  paintContext.clearRect(0, 0, canvas.width, canvas.height);
+  outlineContext.clearRect(0, 0, canvas.width, canvas.height);
+  drawColoringOutline(outlineContext, activeTemplate);
   hasDrawing = false;
+  renderPage();
+}
+
+function captureDraft() {
+  return {
+    id: currentId,
+    paint: paintCanvas.toDataURL('image/png'),
+    template: activeTemplate?.id || null,
+    hasDrawing,
+  };
 }
 
 function loadPicture(source) {
+  // Keep pictures from the original, single-layer sketchbook readable.
+  const draft = typeof source === 'string' ? { paint: source, template: null, hasDrawing: true } : source;
+  if (!draft.paint) {
+    blankPage(draft.template, draft.id);
+    return;
+  }
   loading = true;
   const image = new Image();
   image.onload = () => {
-    blankPage();
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    hasDrawing = true;
+    blankPage(draft.template, draft.id);
+    paintContext.drawImage(image, 0, 0, canvas.width, canvas.height);
+    hasDrawing = draft.hasDrawing !== false;
+    renderPage();
     loading = false;
   };
   image.onerror = () => {
     loading = false;
     say('This picture could not be opened.');
   };
-  image.src = source;
+  image.src = draft.paint;
 }
 
 blankPage();
 try {
   const saved = JSON.parse(localStorage.getItem(storageKey));
   if (saved && Array.isArray(saved.pictures)) {
-    state = saved;
-    if (state.draft) loadPicture(state.draft);
+    state = {
+      ...saved,
+      pictures: saved.pictures.map((picture) => ({ ...picture, id: picture.id || newPictureId() })),
+    };
+    if (state.draft) {
+      const draft = typeof state.draft === 'string'
+        ? { paint: state.draft, template: null, hasDrawing: true }
+        : state.draft;
+      const existing = state.pictures.find((picture) => picture.id === draft.id ||
+        (draft.paint && (picture.paint || picture.image) === draft.paint && (picture.template || null) === (draft.template || null)));
+      state.draft = { ...draft, id: draft.id || existing?.id || newPictureId() };
+      loadPicture(state.draft);
+    }
   }
 } catch {
   say('Saved pictures could not be read. Storage may be blocked.');
@@ -87,6 +138,7 @@ const brushTypes = [
   ['spray', 'Spray paint'],
   ['rainbow', 'Rainbow'],
   ['stars', 'Stars'],
+  ['eraser', 'Eraser'],
 ];
 
 function makeBrush(type, size, paint) {
@@ -168,6 +220,13 @@ function drawBrushPreview(preview, type, size, opacity) {
   target.fillStyle = '#000000';
   target.fillRect(0, 0, 120, 120);
   target.restore();
+  if (type === 'eraser') {
+    target.save();
+    target.globalCompositeOperation = 'source-out';
+    target.fillStyle = color;
+    target.fillRect(10, 18, 100, 84);
+    target.restore();
+  }
 }
 
 const brushPreview = document.querySelector('#brush-preview');
@@ -188,7 +247,11 @@ for (const [type, name] of brushTypes) {
   preview.width = preview.height = 120;
   preview.dataset.brush = type;
   preview.setAttribute('aria-hidden', 'true');
-  button.append(preview);
+  if (type === 'eraser') {
+    button.innerHTML = '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" aria-hidden="true"><path d="m9 29 18-18a4 4 0 0 1 6 0l7 7a4 4 0 0 1 0 6L25 39H18Z" fill="#ec8fba"/><path d="m16 22 16 16M25 39h17"/></svg>';
+  } else {
+    button.append(preview);
+  }
   button.addEventListener('click', () => {
     brushType = type;
     document.querySelectorAll('.brush-choice').forEach((choice) => {
@@ -227,10 +290,15 @@ function point(event) {
 }
 
 function renderStroke() {
-  context.drawImage(baseCanvas, 0, 0);
-  context.globalAlpha = strokeOpacity;
-  context.drawImage(strokeCanvas, 0, 0);
-  context.globalAlpha = 1;
+  paintContext.clearRect(0, 0, canvas.width, canvas.height);
+  paintContext.drawImage(baseCanvas, 0, 0);
+  paintContext.save();
+  clipColoringRegion(paintContext, activeTemplate, activeRegion);
+  paintContext.globalAlpha = strokeOpacity;
+  paintContext.globalCompositeOperation = activeBrush.type === 'eraser' ? 'destination-out' : 'source-over';
+  paintContext.drawImage(strokeCanvas, 0, 0);
+  paintContext.restore();
+  renderPage();
 }
 
 canvas.addEventListener('pointerdown', (event) => {
@@ -239,7 +307,17 @@ canvas.addEventListener('pointerdown', (event) => {
   pointer = event.pointerId;
   canvas.setPointerCapture(pointer);
   lastPoint = point(event);
-  baseContext.drawImage(canvas, 0, 0);
+  activeRegion = -1;
+  if (activeTemplate) {
+    for (let index = activeTemplate.regions.length - 1; index >= 0; index--) {
+      if (context.isPointInPath(activeTemplate.regions[index], lastPoint.x, lastPoint.y)) {
+        activeRegion = index;
+        break;
+      }
+    }
+  }
+  baseContext.clearRect(0, 0, canvas.width, canvas.height);
+  baseContext.drawImage(paintCanvas, 0, 0);
   strokeContext.clearRect(0, 0, canvas.width, canvas.height);
   strokeOpacity = Number(brushOpacity.value) / 100;
   activeBrush = makeBrush(brushType, Number(brushSize.value), color);
@@ -263,33 +341,69 @@ canvas.addEventListener('pointermove', (event) => {
 function finishStroke(event) {
   if (event.pointerId !== pointer) return;
   pointer = null;
-  store({ ...state, draft: canvas.toDataURL('image/png') }, '');
+  saveCurrentPicture();
 }
 canvas.addEventListener('pointerup', finishStroke);
 canvas.addEventListener('pointercancel', finishStroke);
 canvas.addEventListener('lostpointercapture', finishStroke);
 
-document.querySelector('#save-button').addEventListener('click', () => {
-  if (loading || pointer !== null || !hasDrawing) return;
-  const image = canvas.toDataURL('image/png');
-  if (state.pictures.some((picture) => picture.image === image)) {
-    say('Already in My pictures');
-    return;
+function saveCurrentPicture() {
+  if (loading || pointer !== null) return false;
+  const draft = captureDraft();
+  const previous = state.pictures.find((picture) => picture.id === currentId);
+  if (!hasDrawing && !activeTemplate && !previous) {
+    return store({ ...state, draft }, '');
   }
-  store({
-    draft: image,
-    pictures: [...state.pictures, { image, created: Date.now() }],
-  }, 'Picture kept!');
-});
+  const picture = {
+    ...draft,
+    image: canvas.toDataURL('image/png'),
+    created: previous?.created || Date.now(),
+  };
+  const pictures = previous
+    ? state.pictures.map((entry) => entry.id === currentId ? picture : entry)
+    : [...state.pictures, picture];
+  return store({ ...state, draft, pictures }, '');
+}
 
+const pagePicker = document.querySelector('#page-picker');
+for (const template of [null, ...coloringTemplates]) {
+  const button = document.createElement('button');
+  button.className = 'page-choice';
+  button.setAttribute('aria-label', template ? template.name : 'Blank page');
+  const preview = document.createElement('canvas');
+  preview.width = preview.height = 300;
+  preview.setAttribute('aria-hidden', 'true');
+  const target = preview.getContext('2d');
+  target.scale(0.25, 0.25);
+  drawColoringOutline(target, template);
+  if (!template) {
+    target.strokeStyle = '#accfdf';
+    target.lineWidth = 14;
+    target.strokeRect(260, 180, 680, 840);
+    target.beginPath();
+    target.moveTo(600, 470);
+    target.lineTo(600, 730);
+    target.moveTo(470, 600);
+    target.lineTo(730, 600);
+    target.stroke();
+  }
+  button.append(preview);
+  button.addEventListener('click', () => {
+    if (loading || pointer !== null) return;
+    if (!saveCurrentPicture()) return;
+    const draft = { id: newPictureId(), paint: null, template: template?.id || null, hasDrawing: false };
+    if (!store({ ...state, draft }, '')) return;
+    blankPage(draft.template, draft.id);
+    pagePicker.close();
+  });
+  document.querySelector('#page-choices').append(button);
+}
 document.querySelector('#new-button').addEventListener('click', () => {
-  if (loading || pointer !== null) return;
-  const kept = !hasDrawing || state.pictures.some((picture) => picture.image === canvas.toDataURL('image/png'));
-  if (!kept && !confirm('Start a new page? This drawing is not in My pictures. Choose Cancel, then Keep picture to keep it.')) return;
-  if (store({ ...state, draft: null }, 'A fresh page for you')) blankPage();
+  if (!loading && pointer === null) pagePicker.showModal();
 });
+document.querySelector('#close-page-picker').addEventListener('click', () => pagePicker.close());
 
-document.querySelector('#gallery-button').addEventListener('click', () => {
+function renderGallery() {
   const pictures = document.querySelector('#pictures');
   pictures.replaceChildren();
   if (!state.pictures.length) {
@@ -301,6 +415,8 @@ document.querySelector('#gallery-button').addEventListener('click', () => {
     pictures.append(empty);
   }
   [...state.pictures].reverse().forEach((picture) => {
+    const card = document.createElement('div');
+    card.className = 'picture-card';
     const button = document.createElement('button');
     button.className = 'picture';
     button.setAttribute('aria-label', `Open picture from ${new Date(picture.created).toLocaleString()}`);
@@ -310,17 +426,86 @@ document.querySelector('#gallery-button').addEventListener('click', () => {
     button.append(image);
     button.addEventListener('click', () => {
       if (loading || pointer !== null) return;
-      const kept = !hasDrawing || state.pictures.some((entry) => entry.image === canvas.toDataURL('image/png'));
-      if (!kept && !confirm('Open this picture instead? Choose Cancel, then Keep picture to keep your current drawing.')) return;
-      if (!store({ ...state, draft: picture.image }, '')) return;
-      loadPicture(picture.image);
+      if (!saveCurrentPicture()) return;
+      const selected = state.pictures.find((entry) => entry.id === picture.id);
+      if (!selected) return;
+      const draft = {
+        id: selected.id,
+        paint: selected.paint || selected.image,
+        template: selected.template || null,
+        hasDrawing: selected.hasDrawing !== false,
+      };
+      if (!store({ ...state, draft }, '')) return;
+      loadPicture(draft);
       gallery.close();
     });
-    pictures.append(button);
+    const remove = document.createElement('button');
+    remove.className = 'delete-picture icon-button';
+    remove.setAttribute('aria-label', 'Delete picture');
+    remove.title = 'Delete picture';
+    remove.innerHTML = document.querySelector('#delete-button').innerHTML;
+    remove.addEventListener('click', () => deletePicture(picture.id));
+    card.append(button, remove);
+    pictures.append(card);
   });
+}
+
+function updateUndoButtons() {
+  document.querySelector('#undo-delete').hidden = !state.deleted;
+  document.querySelector('#undo-gallery-delete').hidden = !state.deleted;
+}
+
+function deletePicture(id) {
+  if (loading || pointer !== null) return;
+  const current = id === currentId;
+  const previous = state.pictures.find((picture) => picture.id === id);
+  const deleted = current
+    ? { ...captureDraft(), image: canvas.toDataURL('image/png'), created: previous?.created || Date.now() }
+    : previous;
+  if (!deleted || (current && !hasDrawing && !activeTemplate && !previous)) return;
+  if (!store({
+    ...state,
+    draft: current ? null : state.draft,
+    pictures: state.pictures.filter((picture) => picture.id !== id),
+    deleted,
+  }, '')) return;
+  if (current) blankPage();
+  updateUndoButtons();
+  if (gallery.open) renderGallery();
+}
+
+function undoDelete() {
+  if (!state.deleted || loading || pointer !== null) return;
+  const picture = state.deleted;
+  const restoreOnCanvas = !hasDrawing && !activeTemplate;
+  const draft = {
+    id: picture.id,
+    paint: picture.paint || picture.image,
+    template: picture.template || null,
+    hasDrawing: picture.hasDrawing !== false,
+  };
+  if (!store({
+    ...state,
+    pictures: [...state.pictures, picture],
+    deleted: null,
+    draft: restoreOnCanvas ? draft : state.draft,
+  }, '')) return;
+  if (restoreOnCanvas) loadPicture(draft);
+  updateUndoButtons();
+  if (gallery.open) renderGallery();
+}
+
+document.querySelector('#delete-button').addEventListener('click', () => deletePicture(currentId));
+document.querySelector('#undo-delete').addEventListener('click', undoDelete);
+document.querySelector('#undo-gallery-delete').addEventListener('click', undoDelete);
+updateUndoButtons();
+
+document.querySelector('#gallery-button').addEventListener('click', () => {
+  if (loading || pointer !== null) return;
+  saveCurrentPicture();
+  renderGallery();
   gallery.showModal();
 });
-
 document.querySelector('#close-gallery').addEventListener('click', () => gallery.close());
 
 if ('serviceWorker' in navigator) {

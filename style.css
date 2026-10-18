@@ -30,6 +30,9 @@ h1 span { color: #e9a62e; display: inline-block; margin-left: 10px; font-size: 3
 .save-button { background: #263f54; color: white; }
 .icon-button { width: 48px; height: 48px; padding: 12px; display: grid; place-items: center; }
 .icon-button svg { width: 24px; height: 24px; }
+.icon-button[hidden] { display: none; }
+.picture-actions { display: flex; gap: 10px; }
+.delete-button { color: #b44b58; }
 
 .drawing-area { flex: 1; min-height: 0; display: grid; place-items: center; container-type: size; }
 .paper {
@@ -49,6 +52,7 @@ footer { width: min(100%, 780px); align-self: center; }
 .brush-choice:last-child { margin-right: auto; }
 .brush-choice[aria-pressed="true"] { border-color: #263f54; background: white; }
 .brush-choice canvas { cursor: pointer; touch-action: pan-x; }
+.brush-choice svg { display: block; width: 100%; height: 100%; color: #263f54; }
 .palette { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; padding: 6px 0 20px; }
 .swatch { width: 48px; height: 48px; border-radius: 50%; border: 4px solid transparent; background: var(--paint); background-clip: padding-box; position: relative; }
 .swatch[aria-pressed="true"] { outline: 3px solid #263f54; outline-offset: 1px; }
@@ -70,8 +74,14 @@ dialog { width: min(680px, calc(100% - 28px)); max-height: 85svh; border: none; 
 dialog::backdrop { background: #263f5480; }
 .gallery-heading { justify-content: space-between; margin-bottom: 16px; }
 .gallery-heading h2 { margin: 0; font-size: 25px; }
+.page-choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.page-choice { padding: 8px; border: 3px solid #c9e0ea; border-radius: 16px; background: white; }
+.page-choice:active { border-color: #263f54; }
+.page-choice canvas { width: 100%; height: auto; aspect-ratio: 1; cursor: pointer; touch-action: pan-y; }
 .pictures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.picture { padding: 0; border: 2px solid #c9e0ea; border-radius: 8px; overflow: hidden; background: white; }
+.picture-card { position: relative; }
+.picture { display: block; width: 100%; padding: 0; border: 2px solid #c9e0ea; border-radius: 8px; overflow: hidden; background: white; }
+.delete-picture { position: absolute; bottom: 6px; right: 6px; width: 44px; height: 44px; padding: 10px; border: none; border-radius: 12px; background: #fff0f2; color: #b44b58; }
 .picture img { width: 100%; display: block; aspect-ratio: 1; }
 .empty-gallery { grid-column: 1 / -1; padding: 28px 0; display: grid; place-items: center; color: #accfdf; }
 .empty-gallery svg { width: 72px; height: 72px; }
