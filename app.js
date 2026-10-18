@@ -19,6 +19,9 @@ const brushOpacity = document.querySelector('#brush-opacity');
 let strokeOpacity = 1;
 const status = document.querySelector('#status');
 const gallery = document.querySelector('#gallery');
+const brushCursor = document.querySelector('#brush-cursor');
+let cursorPosition = null;
+let cursorTipKey = '';
 const storageKey = 'little-sketchbook-v1';
 const colors = [
   ['Ink', '#263f54'],
@@ -241,6 +244,7 @@ function updateBrushPreview() {
   document.querySelectorAll('.brush-choice canvas').forEach((preview) => {
     drawBrushPreview(preview, preview.dataset.brush, 22, 1);
   });
+  refreshBrushCursor();
 }
 
 for (const [type, name] of brushTypes) {
@@ -295,6 +299,65 @@ function point(event) {
     x: (event.clientX - bounds.left) * canvas.width / bounds.width,
     y: (event.clientY - bounds.top) * canvas.height / bounds.height,
   };
+}
+
+function hideBrushCursor() {
+  cursorPosition = null;
+  brushCursor.hidden = true;
+  stage.classList.remove('has-brush-cursor');
+}
+
+function refreshBrushCursor() {
+  if (!cursorPosition) return;
+  const bounds = canvas.getBoundingClientRect();
+  const { x, y } = cursorPosition;
+  if (loading || gesture || openSheet || x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) {
+    hideBrushCursor();
+    return;
+  }
+  const brush = pointer !== null ? activeBrush : makeBrush(brushType, Number(brushSize.value), color);
+  const opacity = pointer !== null ? strokeOpacity : Number(brushOpacity.value) / 100;
+  const scale = bounds.width / canvas.width;
+  const extent = brush.size * (brush.type === 'stars' || brush.type === 'spray' ? 1.5 : brush.type === 'rainbow' || brush.type === 'marker' ? 1.06 : 1);
+  const side = extent * scale + 12;
+  const key = `${brush.type}-${brush.size}-${brush.color}-${opacity}-${scale}`;
+  if (key !== cursorTipKey) {
+    cursorTipKey = key;
+    const target = brushCursor.getContext('2d');
+    const logicalSide = side / scale;
+    const middle = logicalSide / 2;
+    target.setTransform(256 / logicalSide, 0, 0, 256 / logicalSide, 0, 0);
+    target.clearRect(0, 0, logicalSide, logicalSide);
+    dab(target, middle, middle, { ...brush, color: brush.type === 'eraser' ? '#ffffff' : brush.color });
+    target.save();
+    target.globalCompositeOperation = 'destination-in';
+    target.globalAlpha = opacity;
+    target.fillRect(0, 0, logicalSide, logicalSide);
+    target.restore();
+    // A crisp rim keeps pale paint and the eraser visible without changing the paint preview.
+    target.beginPath();
+    target.arc(middle, middle, extent / 2, 0, Math.PI * 2);
+    target.strokeStyle = '#ffffff';
+    target.lineWidth = 3.5 / scale;
+    target.stroke();
+    if (brush.type === 'eraser') target.setLineDash([4 / scale, 3 / scale]);
+    target.strokeStyle = brush.type === 'eraser' ? '#b44b58' : '#263f54';
+    target.lineWidth = 1.25 / scale;
+    target.stroke();
+    target.setLineDash([]);
+    brushCursor.style.width = `${side}px`;
+    brushCursor.style.height = `${side}px`;
+  }
+  brushCursor.style.left = `${x}px`;
+  brushCursor.style.top = `${y}px`;
+  brushCursor.hidden = false;
+  stage.classList.add('has-brush-cursor');
+}
+
+function updateBrushCursor(event) {
+  if (event.pointerType === 'touch' && event.pointerId !== pointer) return;
+  cursorPosition = { x: event.clientX, y: event.clientY };
+  refreshBrushCursor();
 }
 
 function renderStroke() {
@@ -371,6 +434,7 @@ function setView(scale, x, y) {
   };
   paper.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
   fitButton.hidden = view.scale === 1;
+  refreshBrushCursor();
 }
 
 // Keep the spot of paper that was under `from` (in the `base` view) under `to`.
@@ -416,6 +480,7 @@ stage.addEventListener('pointerdown', (event) => {
     // Fingers that close a sheet or join another finger only move the view, never paint.
     if (openSheet || gesture || touches.size > 1) {
       showSheet(null);
+      hideBrushCursor();
       if (pointer !== null) cancelStroke();
       anchorGesture();
       return;
@@ -424,7 +489,10 @@ stage.addEventListener('pointerdown', (event) => {
     showSheet(null);
     return;
   }
-  if (event.target === canvas) startStroke(event);
+  if (event.target === canvas) {
+    startStroke(event);
+    updateBrushCursor(event);
+  }
 });
 
 stage.addEventListener('pointermove', (event) => {
@@ -435,6 +503,7 @@ stage.addEventListener('pointermove', (event) => {
       return;
     }
   }
+  updateBrushCursor(event);
   if (event.pointerId !== pointer) return;
   const points = event.getCoalescedEvents?.() || [event];
   for (const sample of points.length ? points : [event]) {
@@ -453,7 +522,10 @@ function releasePointer(event) {
     return;
   }
   finishStroke(event);
+  if (event.pointerType === 'touch' || event.type === 'pointercancel') hideBrushCursor();
 }
+stage.addEventListener('pointerleave', hideBrushCursor);
+window.addEventListener('blur', hideBrushCursor);
 stage.addEventListener('pointerup', releasePointer);
 stage.addEventListener('pointercancel', releasePointer);
 stage.addEventListener('lostpointercapture', releasePointer);
@@ -490,6 +562,7 @@ function showSheet(name) {
     sheet.hidden = key !== name;
   }
   openSheet = name;
+  if (name) hideBrushCursor();
 }
 for (const [key, [button]] of Object.entries(sheets)) {
   button.addEventListener('click', () => showSheet(openSheet === key ? null : key));

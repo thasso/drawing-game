@@ -67,6 +67,9 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
   pointer-events: none;
 }
 #status:empty { display: none; }
+.drawing-area.has-brush-cursor #canvas { cursor: none; }
+#brush-cursor { position: fixed; z-index: 1; pointer-events: none; translate: -50% -50%; }
+#brush-cursor[hidden] { display: none; }
 
 .dock {
   position: absolute;
