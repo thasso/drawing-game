@@ -23,6 +23,8 @@ const colors = [
   ['Pink', '#ec8fba'],
 ];
 let color = colors[5][1];
+let brushType = 'round';
+let activeBrush = null;
 let pointer = null;
 let lastPoint = null;
 let loading = false;
@@ -78,11 +80,123 @@ try {
   say('Saved pictures could not be read. Storage may be blocked.');
 }
 
-const brushPreview = document.querySelector('#brush-preview-stroke');
+const brushTypes = [
+  ['round', 'Round paint'],
+  ['marker', 'Flat marker'],
+  ['pencil', 'Pencil'],
+  ['spray', 'Spray paint'],
+  ['rainbow', 'Rainbow'],
+  ['stars', 'Stars'],
+];
+
+function makeBrush(type, size, paint) {
+  const spacing = Math.max(1, size * (type === 'stars' ? 1.8 : type === 'spray' ? 0.3 : 0.15));
+  return { type, size, color: paint, spacing, untilNext: spacing };
+}
+
+function dab(target, x, y, brush) {
+  const size = brush.size;
+  target.save();
+  target.translate(x, y);
+  target.fillStyle = brush.color;
+  if (brush.type === 'marker') {
+    target.rotate(-Math.PI / 4);
+    target.fillRect(-size / 2, -size / 6, size, size / 3);
+  } else if (brush.type === 'pencil' || brush.type === 'spray') {
+    const spray = brush.type === 'spray';
+    target.globalAlpha = spray ? 0.55 : 0.4;
+    for (let index = 0; index < (spray ? 24 : 16); index++) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.sqrt(Math.random()) * size * (spray ? 0.7 : 0.45);
+      target.beginPath();
+      target.arc(Math.cos(angle) * radius, Math.sin(angle) * radius, Math.max(0.6, size * (spray ? 0.025 : 0.035)), 0, Math.PI * 2);
+      target.fill();
+    }
+  } else if (brush.type === 'rainbow') {
+    const rainbow = ['#ed575e', '#f49b38', '#f3ce45', '#57ad74', '#499cde', '#9d79cb'];
+    rainbow.forEach((paint, index) => {
+      target.fillStyle = paint;
+      target.beginPath();
+      target.arc(0, (index - 2.5) * size / 6, size / 10, 0, Math.PI * 2);
+      target.fill();
+    });
+  } else if (brush.type === 'stars') {
+    target.beginPath();
+    for (let index = 0; index < 10; index++) {
+      const angle = index * Math.PI / 5 - Math.PI / 2;
+      const radius = size * (index % 2 ? 0.32 : 0.75);
+      if (index === 0) target.moveTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+      else target.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+    }
+    target.closePath();
+    target.fill();
+  } else {
+    target.beginPath();
+    target.arc(0, 0, size / 2, 0, Math.PI * 2);
+    target.fill();
+  }
+  target.restore();
+}
+
+function paintLine(target, from, to, brush) {
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  if (!distance) return;
+  let offset = brush.untilNext;
+  for (; offset <= distance; offset += brush.spacing) {
+    const fraction = offset / distance;
+    dab(target, from.x + (to.x - from.x) * fraction, from.y + (to.y - from.y) * fraction, brush);
+  }
+  brush.untilNext = offset - distance;
+}
+
+function drawBrushPreview(preview, type, size, opacity) {
+  const target = preview.getContext('2d');
+  target.setTransform(preview.width / 120, 0, 0, preview.height / 120, 0, 0);
+  target.clearRect(0, 0, 120, 120);
+  const brush = makeBrush(type, size, color);
+  let previous = { x: 22, y: 60 };
+  dab(target, previous.x, previous.y, brush);
+  for (let index = 1; index <= 60; index++) {
+    const next = { x: 22 + index / 60 * 76, y: 60 + Math.sin(index / 60 * Math.PI * 2) * 19 };
+    paintLine(target, previous, next, brush);
+    previous = next;
+  }
+  // Fade the completed stroke once, just like the drawing canvas.
+  target.save();
+  target.globalCompositeOperation = 'destination-in';
+  target.globalAlpha = opacity;
+  target.fillStyle = '#000000';
+  target.fillRect(0, 0, 120, 120);
+  target.restore();
+}
+
+const brushPreview = document.querySelector('#brush-preview');
 function updateBrushPreview() {
-  brushPreview.setAttribute('stroke', color);
-  brushPreview.setAttribute('stroke-width', Number(brushSize.value) / 3);
-  brushPreview.setAttribute('opacity', Number(brushOpacity.value) / 100);
+  drawBrushPreview(brushPreview, brushType, Number(brushSize.value) / 3, Number(brushOpacity.value) / 100);
+  document.querySelectorAll('.brush-choice canvas').forEach((preview) => {
+    drawBrushPreview(preview, preview.dataset.brush, 22, 1);
+  });
+}
+
+for (const [type, name] of brushTypes) {
+  const button = document.createElement('button');
+  button.className = 'brush-choice';
+  button.title = name;
+  button.setAttribute('aria-label', name);
+  button.setAttribute('aria-pressed', String(type === brushType));
+  const preview = document.createElement('canvas');
+  preview.width = preview.height = 120;
+  preview.dataset.brush = type;
+  preview.setAttribute('aria-hidden', 'true');
+  button.append(preview);
+  button.addEventListener('click', () => {
+    brushType = type;
+    document.querySelectorAll('.brush-choice').forEach((choice) => {
+      choice.setAttribute('aria-pressed', String(choice === button));
+    });
+    updateBrushPreview();
+  });
+  document.querySelector('#brushes').append(button);
 }
 brushSize.addEventListener('input', updateBrushPreview);
 brushOpacity.addEventListener('input', updateBrushPreview);
@@ -128,14 +242,8 @@ canvas.addEventListener('pointerdown', (event) => {
   baseContext.drawImage(canvas, 0, 0);
   strokeContext.clearRect(0, 0, canvas.width, canvas.height);
   strokeOpacity = Number(brushOpacity.value) / 100;
-  strokeContext.fillStyle = color;
-  strokeContext.strokeStyle = color;
-  strokeContext.lineWidth = Number(brushSize.value);
-  strokeContext.lineCap = 'round';
-  strokeContext.lineJoin = 'round';
-  strokeContext.beginPath();
-  strokeContext.arc(lastPoint.x, lastPoint.y, strokeContext.lineWidth / 2, 0, Math.PI * 2);
-  strokeContext.fill();
+  activeBrush = makeBrush(brushType, Number(brushSize.value), color);
+  dab(strokeContext, lastPoint.x, lastPoint.y, activeBrush);
   renderStroke();
   hasDrawing = true;
   say('Drawing…');
@@ -146,10 +254,7 @@ canvas.addEventListener('pointermove', (event) => {
   const points = event.getCoalescedEvents?.() || [event];
   for (const sample of points.length ? points : [event]) {
     const next = point(sample);
-    strokeContext.beginPath();
-    strokeContext.moveTo(lastPoint.x, lastPoint.y);
-    strokeContext.lineTo(next.x, next.y);
-    strokeContext.stroke();
+    paintLine(strokeContext, lastPoint, next, activeBrush);
     lastPoint = next;
   }
   renderStroke();
