@@ -8,7 +8,7 @@ const source = ['coloring.js', 'app.js'].map((file) => fs.readFileSync(path.join
 const key = 'little-sketchbook-v2';
 const legacyKey = 'little-sketchbook-v1';
 
-function environment() {
+function environment(delay = 0) {
   const data = new Map();
   let tail = Promise.resolve();
   const env = {
@@ -20,7 +20,11 @@ function environment() {
     locks: {
       request(name, callback) {
         assert.equal(name, key);
-        const next = tail.then(callback);
+        env.onRequest?.();
+        const next = tail.then(async () => {
+          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+          return callback();
+        });
         tail = next.catch(() => {});
         return next;
       },
@@ -35,21 +39,28 @@ function environment() {
   return env;
 }
 
-function tab(env, name, { locks = true, deferImages = false } = {}) {
+function tab(env, name, { locks = true, deferImages = false, eventPaint = false } = {}) {
   const elements = new Map();
   const pendingImages = [];
   let paint = `data:${name}:blank`;
   function stub(label) {
     const own = {
       label, listeners: {}, style: { setProperty() {} }, classList: { add() {}, remove() {} },
-      dataset: {}, hidden: false, open: false,
+      dataset: {}, hidden: false, open: false, children: [], data: '', captures: 0,
+      append(...children) { this.children.push(...children); },
+      replaceChildren(...children) { this.children = children; },
+      showModal() { this.open = true; }, close() { this.open = false; },
+      setPointerCapture() { this.captures++; },
     };
     const proxy = new Proxy(own, {
       get(target, property) {
         if (property in target) return target[property];
         if (property === 'addEventListener') return (type, fn) => { (target.listeners[type] ||= []).push(fn); };
         if (property === 'getContext') return () => proxy;
-        if (property === 'toDataURL') return () => paint;
+        if (property === 'toDataURL') return () => eventPaint ? `data:image/mock,${target.data}` : paint;
+        if (eventPaint && property === 'clearRect') return () => { target.data = ''; };
+        if (eventPaint && property === 'drawImage') return (image) => { target.data += image.data || ''; };
+        if (eventPaint && (property === 'fill' || property === 'fillRect')) return () => { target.data += 'mark;'; };
         if (property === 'getBoundingClientRect') return () => ({ left: 0, top: 0, width: 1200, height: 1200 });
         if (property === 'querySelectorAll') return () => [];
         if (property === 'isPointInPath' || property === 'contains') return () => false;
@@ -71,7 +82,7 @@ function tab(env, name, { locks = true, deferImages = false } = {}) {
     Path2D: class { rect() {} addPath() {} }, ResizeObserver: class { observe() {} },
     Image: class {
       set src(value) {
-        const load = () => { paint = value; this.onload(); };
+        const load = () => { paint = value; this.data = value.replace('data:image/mock,', ''); this.onload(); };
         if (deferImages) pendingImages.push(load); else load();
       }
     },
@@ -91,6 +102,15 @@ function tab(env, name, { locks = true, deferImages = false } = {}) {
         target: elements.get('#canvas'), preventDefault() {} };
       (stage.listeners[type] || []).forEach((handler) => handler(event));
     },
+    async idle() {
+      // New queued work may have been appended while the previous tail ran.
+      for (;;) {
+        const tail = run('typeof persistenceTail === "undefined" ? Promise.resolve() : persistenceTail');
+        await tail;
+        if (run('typeof persistenceTail === "undefined"') || tail === run('persistenceTail')) return;
+      }
+    },
+    click(element) { return Promise.all((element.listeners.click || []).map((handler) => handler())); },
     get id() { return run('currentId'); },
     get status() { return elements.get('#status').textContent; },
   };
@@ -102,6 +122,147 @@ async function test(name, body) {
 }
 
 (async () => {
+  await test('three rapid star taps all paint while delayed persistence catches up', async () => {
+    const env = environment(5), a = tab(env, 'A', { eventPaint: true });
+    a.run("brushType = 'stars'");
+    a.send('pointerdown', 1); a.send('pointerup', 1);
+    await new Promise(setImmediate);
+    assert.equal(a.run('saving'), true);
+    a.send('pointerdown', 2); a.send('pointerup', 2);
+    a.send('pointerdown', 3); a.send('pointerup', 3);
+    assert.equal(a.elements.get('#canvas').captures, 3);
+    assert.equal(a.run('captureDraft().paint'), 'data:image/mock,mark;mark;mark;');
+    await a.idle();
+    assert.equal(env.pictures().length, 1);
+    assert.equal(env.pictures()[0].paint, a.run('captureDraft().paint'));
+  });
+  await test('active next stroke is not captured provisionally or rebased by a pending save', async () => {
+    const env = environment(5), a = tab(env, 'A', { eventPaint: true });
+    a.send('pointerdown', 1); a.send('pointerup', 1);
+    await new Promise(setImmediate);
+    a.send('pointerdown', 2);
+    await a.idle();
+    assert.equal(env.pictures()[0].paint, 'data:image/mock,mark;');
+    assert.equal(a.run('captureDraft().paint'), 'data:image/mock,mark;mark;');
+    a.send('pointerup', 2);
+    await a.idle();
+    assert.equal(env.pictures()[0].paint, a.run('captureDraft().paint'));
+    assert.equal(a.run('currentPicture.id'), a.id);
+  });
+  await test('pending-save pinch cancels provisional paint before queued saves capture it', async () => {
+    const env = environment(5), a = tab(env, 'A', { eventPaint: true });
+    a.send('pointerdown', 1); a.send('pointerup', 1);
+    await new Promise(setImmediate);
+    a.send('pointerdown', 2);
+    a.send('pointerdown', 3, 'touch', false);
+    a.send('pointerup', 3, 'touch', false); a.send('pointerup', 2);
+    await a.idle();
+    assert.equal(env.pictures()[0].paint, 'data:image/mock,mark;');
+    assert.equal(a.run('captureDraft().paint'), env.pictures()[0].paint);
+  });
+  await test('queued local paint follows a conflict fork without replacing either base', async () => {
+    const env = environment(5), a = tab(env, 'A', { eventPaint: true });
+    a.send('pointerdown', 1); a.send('pointerup', 1); await a.idle();
+    const b = tab(env, 'B', { eventPaint: true });
+    a.send('pointerdown', 2); a.send('pointerup', 2); await a.idle();
+    b.send('pointerdown', 3); b.send('pointerup', 3);
+    await new Promise(setImmediate);
+    b.send('pointerdown', 4); b.send('pointerup', 4);
+    await b.idle();
+    assert.notEqual(a.id, b.id);
+    assert.equal(env.pictures().length, 2);
+    assert.equal(env.pictures().find(p => p.id === b.id).paint, 'data:image/mock,mark;mark;mark;');
+    assert.equal(env.pictures().find(p => p.id === a.id).paint, 'data:image/mock,mark;mark;');
+    assert.equal(b.run('currentPicture.id'), b.id);
+  });
+  await test('queued delete cannot target another window picture after a pending conflict fork', async () => {
+    const env = environment(5), a = tab(env, 'A', { eventPaint: true });
+    a.send('pointerdown', 1); a.send('pointerup', 1); await a.idle();
+    const b = tab(env, 'B', { eventPaint: true });
+    a.send('pointerdown', 2); a.send('pointerup', 2); await a.idle();
+    b.send('pointerdown', 3); b.send('pointerup', 3);
+    await new Promise(setImmediate);
+    await b.run('deletePicture(currentId)'); await b.idle();
+    assert.equal(env.pictures().length, 2);
+    assert.notEqual(a.id, b.id);
+    assert.match(b.status, /changed while waiting/);
+  });
+  await test('new-page click waits for latest paint, including input during draft write', async () => {
+    const env = environment(5), a = tab(env, 'A', { eventPaint: true });
+    a.send('pointerdown', 1); a.send('pointerup', 1);
+    await new Promise(setImmediate);
+    const original = a.id;
+    let requests = 0;
+    env.onRequest = () => {
+      if (++requests === 2) queueMicrotask(() => { a.send('pointerdown', 3); a.send('pointerup', 3); });
+    };
+    const navigation = a.click(a.elements.get('#page-choices').children[0]);
+    a.send('pointerdown', 2); a.send('pointerup', 2);
+    await navigation; await a.idle();
+    assert.notEqual(a.id, original);
+    assert.equal(a.run('hasDrawing'), false);
+    assert.equal(env.pictures().find(p => p.id === original).paint, 'data:image/mock,mark;mark;mark;');
+  });
+  await test('gallery/open handlers wait for pending paint and preserve the outgoing canvas', async () => {
+    const env = environment(5), a = tab(env, 'A', { eventPaint: true });
+    a.send('pointerdown', 1); a.send('pointerup', 1); await a.idle();
+    const target = a.id;
+    a.run('blankPage()');
+    a.send('pointerdown', 2); a.send('pointerup', 2); await a.idle();
+    const outgoing = a.id;
+    a.send('pointerdown', 3); a.send('pointerup', 3);
+    const gallery = a.click(a.elements.get('#gallery-button'));
+    await gallery;
+    assert.equal(a.elements.get('#gallery').open, true);
+    const openButton = a.elements.get('#pictures').children.at(-1).children[0];
+    const opening = a.click(openButton);
+    a.send('pointerdown', 4); a.send('pointerup', 4);
+    await opening; await a.idle();
+    assert.equal(a.id, target);
+    assert.equal(a.run('captureDraft().paint'), 'data:image/mock,mark;');
+    assert.equal(env.pictures().find(p => p.id === outgoing).paint, 'data:image/mock,mark;mark;mark;');
+  });
+  await test('failed queued new/open navigation never clears newer paint', async () => {
+    const env = environment(5), a = tab(env, 'A', { eventPaint: true });
+    a.send('pointerdown', 1); a.send('pointerup', 1); await a.idle();
+    await a.click(a.elements.get('#gallery-button'));
+    const openButton = a.elements.get('#pictures').children[1].children[0];
+    const id = a.id;
+    a.send('pointerdown', 2); a.send('pointerup', 2);
+    env.failWrite = true;
+    const newPage = a.click(a.elements.get('#page-choices').children[0]);
+    const opening = a.click(openButton);
+    a.send('pointerdown', 3); a.send('pointerup', 3);
+    await Promise.all([newPage, opening]); await a.idle();
+    assert.equal(a.id, id);
+    assert.equal(a.run('captureDraft().paint'), 'data:image/mock,mark;mark;mark;');
+    assert.match(a.status, /Could not save/);
+    env.failWrite = false;
+    await a.run('saveCurrentPicture()');
+    assert.equal(env.pictures()[0].paint, a.run('captureDraft().paint'));
+  });
+  await test('delete and undo cannot clear new strokes arriving during their writes', async () => {
+    const env = environment(5), a = tab(env, 'A', { eventPaint: true });
+    a.send('pointerdown', 1); a.send('pointerup', 1); await a.idle();
+    const original = a.id;
+    env.onRequest = () => {
+      env.onRequest = null;
+      queueMicrotask(() => { a.send('pointerdown', 2); a.send('pointerup', 2); });
+    };
+    await a.run('deletePicture(currentId)'); await a.idle();
+    assert.notEqual(a.id, original);
+    assert.equal(a.run('hasDrawing'), true);
+    assert.equal(env.pictures()[0].paint, 'data:image/mock,mark;mark;');
+    a.run('blankPage()');
+    env.onRequest = () => {
+      env.onRequest = null;
+      queueMicrotask(() => { a.send('pointerdown', 3); a.send('pointerup', 3); });
+    };
+    await a.run('undoDelete()'); await a.idle();
+    assert.equal(a.run('captureDraft().paint'), 'data:image/mock,mark;');
+    assert.notEqual(a.id, original);
+    assert.equal(env.pictures().length, 3);
+  });
   await test('stale blank gallery save preserves another tab drawing', async () => {
     const env = environment(), a = tab(env, 'A'), b = tab(env, 'B');
     await a.draw('one');
@@ -115,10 +276,9 @@ async function test(name, body) {
     const release = env.hold();
     const saves = [a.draw('one'), b.draw('two')];
     assert.equal(env.pictures().length, 0);
-    assert.equal(a.run('saving'), true);
-    assert.equal(await a.run('saveCurrentPicture()'), false);
+    const queued = a.run('saveCurrentPicture()');
     release();
-    assert.deepEqual(await Promise.all(saves), [true, true]);
+    assert.deepEqual(await Promise.all([...saves, queued]), [true, true, true]);
     assert.equal(env.pictures().length, 2);
     assert.equal(new Set(env.pictures().map(p => p.id)).size, 2);
   });

@@ -61,6 +61,9 @@ let hadDrawing = false;
 let lastPoint = null;
 let loading = false;
 let saving = false;
+let persistenceTail = Promise.resolve();
+let canvasVersion = 0;
+const strokeWaiters = [];
 let currentPicture = null;
 let hasDrawing = false;
 let currentId = newPictureId();
@@ -567,7 +570,8 @@ function renderStroke() {
 }
 
 function startStroke(event) {
-  if (loading || saving || pointer !== null || event.button !== 0) return;
+  if (loading || pointer !== null || event.button !== 0) return;
+  canvasVersion++;
   event.preventDefault();
   pointer = event.pointerId;
   pointerType = event.pointerType;
@@ -600,11 +604,13 @@ function cancelStroke() {
   paintContext.drawImage(baseCanvas, 0, 0);
   hasDrawing = hadDrawing;
   renderPage();
+  strokeWaiters.splice(0).forEach((resolve) => resolve());
 }
 
 function finishStroke(event) {
   if (event.pointerId !== pointer) return;
   pointer = null;
+  strokeWaiters.splice(0).forEach((resolve) => resolve());
   saveCurrentPicture();
 }
 
@@ -768,8 +774,28 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && openSheet) showSheet(null);
 });
 
-async function saveCurrentPicture() {
-  if (loading || saving || pointer !== null) return false;
+function queuePersistence(operation) {
+  const next = persistenceTail.then(operation).catch(() => {
+    say('Could not save. Device storage may be full or blocked.');
+    return false;
+  });
+  persistenceTail = next;
+  return next;
+}
+
+async function waitForStroke() {
+  while (pointer !== null) await new Promise((resolve) => strokeWaiters.push(resolve));
+}
+
+function saveCurrentPicture() {
+  if (loading) return Promise.resolve(false);
+  // Capture pixels and their base when this job runs, not when it is enqueued.
+  return queuePersistence(saveCanvas);
+}
+
+async function saveCanvas() {
+  await waitForStroke();
+  if (loading) return false;
   const draft = captureDraft();
   const previous = state.pictures.find((picture) => picture.id === currentId);
   if (!hasDrawing && !activeTemplate && !previous) {
@@ -784,6 +810,33 @@ async function saveCurrentPicture() {
     ? state.pictures.map((entry) => entry.id === currentId ? picture : entry)
     : [...state.pictures, picture];
   return store({ ...state, draft, pictures }, '', picture);
+}
+
+async function flushCanvas() {
+  let version;
+  do {
+    await waitForStroke();
+    version = canvasVersion;
+    if (!await saveCanvas()) return false;
+  } while (pointer !== null || version !== canvasVersion);
+  return true;
+}
+
+function navigatePicture(makeDraft, open) {
+  return queuePersistence(async () => {
+    // Drawing can continue during either lock wait. Only switch once its latest
+    // completed paint is durable and no newer/provisional stroke can be cleared.
+    while (!loading) {
+      if (!await flushCanvas()) return false;
+      const version = canvasVersion;
+      const draft = makeDraft();
+      if (!draft || !await store({ ...state, draft }, '')) return false;
+      if (pointer !== null || version !== canvasVersion) continue;
+      open(draft);
+      return true;
+    }
+    return false;
+  });
 }
 
 const pagePicker = document.querySelector('#page-picker');
@@ -809,20 +862,19 @@ for (const template of [null, ...coloringTemplates]) {
     target.stroke();
   }
   button.append(preview);
-  button.addEventListener('click', async () => {
-    if (loading || saving || pointer !== null) return;
-    if (!await saveCurrentPicture()) return;
-    const draft = { id: newPictureId(), paint: null, template: template?.id || null, hasDrawing: false };
-    if (!await store({ ...state, draft }, '')) return;
-    blankPage(draft.template, draft.id);
-    pagePicker.close();
-    gallery.close();
-  });
+  button.addEventListener('click', () => navigatePicture(
+    () => ({ id: newPictureId(), paint: null, template: template?.id || null, hasDrawing: false }),
+    (draft) => {
+      blankPage(draft.template, draft.id);
+      pagePicker.close();
+      gallery.close();
+    },
+  ));
   document.querySelector('#page-choices').append(button);
 }
 const newButton = document.querySelector('#new-button');
 newButton.addEventListener('click', () => {
-  if (!loading && !saving && pointer === null) pagePicker.showModal();
+  if (!loading) pagePicker.showModal();
 });
 document.querySelector('#close-page-picker').addEventListener('click', () => pagePicker.close());
 
@@ -839,21 +891,21 @@ function renderGallery() {
     image.src = picture.image;
     image.alt = 'Saved drawing';
     button.append(image);
-    button.addEventListener('click', async () => {
-      if (loading || saving || pointer !== null) return;
-      if (!await saveCurrentPicture()) return;
-      const selected = state.pictures.find((entry) => entry.id === picture.id);
-      if (!selected) return;
-      const draft = {
-        id: selected.id,
-        paint: selected.paint || selected.image,
-        template: selected.template || null,
-        hasDrawing: selected.hasDrawing !== false,
-      };
-      if (!await store({ ...state, draft }, '')) return;
-      loadPicture(draft);
-      gallery.close();
-    });
+    button.addEventListener('click', () => navigatePicture(
+      () => {
+        const selected = state.pictures.find((entry) => entry.id === picture.id);
+        return selected && {
+          id: selected.id,
+          paint: selected.paint || selected.image,
+          template: selected.template || null,
+          hasDrawing: selected.hasDrawing !== false,
+        };
+      },
+      (draft) => {
+        loadPicture(draft);
+        gallery.close();
+      },
+    ));
     const remove = document.createElement('button');
     remove.className = 'delete-picture icon-button';
     remove.setAttribute('aria-label', 'Delete picture');
@@ -870,8 +922,21 @@ function updateUndoButtons() {
   document.querySelector('#undo-gallery-delete').hidden = !state.deleted;
 }
 
-async function deletePicture(id) {
-  if (loading || saving || pointer !== null) return;
+function deletePicture(id) {
+  const expected = state.pictures.find((picture) => picture.id === id);
+  const wasCurrent = id === currentId;
+  return queuePersistence(() => deleteSavedPicture(id, expected, wasCurrent));
+}
+
+async function deleteSavedPicture(id, expected, wasCurrent) {
+  await waitForStroke();
+  if (loading) return;
+  if ((wasCurrent && id !== currentId) || (!wasCurrent &&
+      !samePicture(expected, state.pictures.find((picture) => picture.id === id)))) {
+    say('This picture changed while waiting. Reopen My Pictures before deleting.');
+    return;
+  }
+  const version = canvasVersion;
   const current = id === currentId;
   const previous = state.pictures.find((picture) => picture.id === id);
   const deleted = current
@@ -884,13 +949,25 @@ async function deletePicture(id) {
     pictures: state.pictures.filter((picture) => picture.id !== id),
     deleted,
   }, '')) return;
-  if (current) blankPage();
+  if (current && pointer === null && version === canvasVersion) blankPage();
+  else if (pointer !== null || version !== canvasVersion) await flushCanvas();
   updateUndoButtons();
   if (gallery.open) renderGallery();
 }
 
-async function undoDelete() {
-  if (!state.deleted || loading || saving || pointer !== null) return;
+function undoDelete() {
+  const expected = state.deleted;
+  return queuePersistence(() => restoreDeletedPicture(expected));
+}
+
+async function restoreDeletedPicture(expected) {
+  await waitForStroke();
+  if (!state.deleted || loading) return;
+  if (!samePicture(expected, state.deleted)) {
+    say('Delete history changed while waiting. Reopen My Pictures and try again.');
+    return;
+  }
+  const version = canvasVersion;
   const picture = state.deleted;
   const restoreOnCanvas = !hasDrawing && !activeTemplate;
   const draft = {
@@ -905,7 +982,8 @@ async function undoDelete() {
     deleted: null,
     draft: restoreOnCanvas ? draft : state.draft,
   }, '')) return;
-  if (restoreOnCanvas) loadPicture(draft);
+  if (restoreOnCanvas && pointer === null && version === canvasVersion) loadPicture(draft);
+  else if (pointer !== null || version !== canvasVersion) await flushCanvas();
   updateUndoButtons();
   if (gallery.open) renderGallery();
 }
@@ -914,12 +992,12 @@ document.querySelector('#undo-delete').addEventListener('click', undoDelete);
 document.querySelector('#undo-gallery-delete').addEventListener('click', undoDelete);
 updateUndoButtons();
 
-document.querySelector('#gallery-button').addEventListener('click', async () => {
-  if (loading || saving || pointer !== null) return;
-  await saveCurrentPicture();
+document.querySelector('#gallery-button').addEventListener('click', () => queuePersistence(async () => {
+  if (loading) return;
+  await flushCanvas();
   renderGallery();
   gallery.showModal();
-});
+}));
 document.querySelector('#close-gallery').addEventListener('click', () => gallery.close());
 
 if ('serviceWorker' in navigator) {
