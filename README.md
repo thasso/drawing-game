@@ -10,7 +10,7 @@ Serve this directory with any static web server. For example:
 python3 -m http.server 8080
 ```
 
-Open http://localhost:8080. Draw and pick a color. Drawings save into **My Pictures** after each stroke; editing updates the same picture. Starting a new page or opening another picture saves the current one first, without a confirmation dialog. The first tile in **My Pictures** is **New page**, which opens a visual chooser for a blank page, a flower, a butterfly, or a rocket.
+Open http://localhost:8080. Draw and pick a color. Drawings save into **My Pictures** after each stroke; editing updates the same picture. Starting a new page or opening another picture saves the current one first, without a confirmation dialog. The first tile in **My Pictures** is **New page**, which opens a visual chooser for a blank page or a coloring page: a flower, butterfly, rocket, rabbit, kitten, puppy, fox, owl, or turtle.
 
 The brush and color buttons at the bottom open their choices only when needed. Pinch with two fingers to zoom and move around the page (or use the mouse wheel); the frame button shows the whole page again. Zooming only changes the view, not the saved picture.
 
@@ -57,3 +57,4 @@ The service worker uses Cache Storage for app files. Bump the cache version in `
 - `sw.js`: versioned offline app cache.
 - `manifest.webmanifest`: install identity, scope, standalone display, and app icons.
 - `icons/`: local SVG icon source and generated PNG icons for install and iOS.
+- `scripts/`: release validator and Node tests for storage and coloring-page data.
