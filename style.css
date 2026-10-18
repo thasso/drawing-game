@@ -126,7 +126,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 .swatch { width: 56px; height: 56px; border-radius: 50%; border: 4px solid transparent; background: var(--paint); background-clip: padding-box; position: relative; }
 .swatch[aria-pressed="true"] { outline: 4px solid #263f54; outline-offset: 2px; }
 .swatch[aria-pressed="true"]::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border-radius: 50%; background: white; }
-.brush-controls { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 8px; background: #eef8fc; border-radius: 18px; width: 270px; }
+.brush-controls { display: flex; align-items: center; gap: 12px; padding: 8px; background: #eef8fc; border-radius: 18px; width: min(270px, calc(100vw - 52px)); }
 .brush-preview { width: 76px; height: 76px; flex-shrink: 0; background: white; border-radius: 12px; cursor: default; }
 .brush-sliders { display: grid; flex: 1; min-width: 0; }
 .brush-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -162,7 +162,6 @@ dialog::backdrop { background: #263f5480; }
 @media (min-width: 700px) and (min-height: 640px) {
   h1 { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 25px; letter-spacing: -1px; margin: 0; }
   .brushes { grid-template-columns: repeat(7, 60px); }
-  .brush-controls { width: auto; }
   .palette { grid-template-columns: repeat(8, 56px); }
 }
 

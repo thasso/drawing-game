@@ -42,6 +42,11 @@
         </button>
         <div id="brush-sheet" class="sheet" hidden>
           <div id="brushes" class="brushes" role="group" aria-label="Brush types"></div>
+        </div>
+        <button id="properties-button" class="dock-button" aria-label="Brush size and opacity" title="Brush size and opacity" aria-expanded="false" aria-controls="properties-sheet">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 7h6M15 7h6M3 17h2M11 17h10"/><circle cx="12" cy="7" r="3"/><circle cx="8" cy="17" r="3"/></svg>
+        </button>
+        <div id="properties-sheet" class="sheet" hidden>
           <div class="brush-controls">
             <canvas id="brush-preview" class="brush-preview" width="240" height="240" role="img" aria-label="Brush preview"></canvas>
             <div class="brush-sliders">

@@ -479,6 +479,7 @@ document.addEventListener('gesturestart', (event) => event.preventDefault());
 const dock = document.querySelector('.dock');
 const sheets = {
   brush: [document.querySelector('#brush-button'), document.querySelector('#brush-sheet')],
+  properties: [document.querySelector('#properties-button'), document.querySelector('#properties-sheet')],
   color: [colorButton, document.querySelector('#color-sheet')],
 };
 let openSheet = null;
