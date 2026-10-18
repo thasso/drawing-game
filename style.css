@@ -133,6 +133,10 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 .brush-choice[aria-pressed="true"] { border-color: #263f54; background: white; }
 .brush-choice canvas { cursor: pointer; }
 .brush-choice svg { display: block; width: 100%; height: 100%; color: #263f54; }
+.glitter-choice svg { padding: 4px; }
+.glitter-choice[aria-pressed="true"] { background: radial-gradient(circle at 30% 30%, #fff6c9, #ffffff 70%); }
+.glitter-badge { display: none; }
+.glitter .glitter-badge { display: inline; }
 .palette { display: grid; grid-template-columns: repeat(4, 56px); gap: 14px; }
 .swatch { width: 56px; height: 56px; border-radius: 50%; border: 4px solid transparent; background: var(--paint); background-clip: padding-box; position: relative; }
 .swatch[aria-pressed="true"] { outline: 4px solid #263f54; outline-offset: 2px; }
