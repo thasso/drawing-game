@@ -5,6 +5,11 @@ const baseCanvas = document.createElement('canvas');
 strokeCanvas.width = baseCanvas.width = canvas.width;
 strokeCanvas.height = baseCanvas.height = canvas.height;
 const strokeContext = strokeCanvas.getContext('2d');
+// Glitter strokes are drawn plain into strokeCanvas and turned into glitter here, so it never builds up.
+const glitterCanvas = document.createElement('canvas');
+glitterCanvas.width = canvas.width;
+glitterCanvas.height = canvas.height;
+const glitterContext = glitterCanvas.getContext('2d');
 const baseContext = baseCanvas.getContext('2d');
 const paintCanvas = document.createElement('canvas');
 const outlineCanvas = document.createElement('canvas');
@@ -62,6 +67,7 @@ const colors = [
 ];
 let color = '#499cde';
 let brushType = 'round';
+let glitter = false;
 let activeBrush = null;
 let pointer = null;
 let pointerType = null;
@@ -178,7 +184,144 @@ function renderPage() {
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(paintCanvas, 0, 0);
   context.drawImage(outlineCanvas, 0, 0);
+  updateSparkle();
 }
+
+function seededRandom(seed) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let mixed = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// While glitter is on, fixed spots of the page twinkle one after another with a soft glow, wherever
+// there is paint. The glow lives on its own canvas above the page, kept off the outlines, so it is
+// never saved, never undone and never read back; saved pictures keep their still glitter.
+const sparkleCanvas = document.querySelector('#sparkle');
+const sparkleContext = sparkleCanvas.getContext('2d');
+const sparkleMask = document.createElement('canvas');
+sparkleMask.width = sparkleMask.height = canvas.width;
+const sparkleMaskContext = sparkleMask.getContext('2d');
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let sparkleSpots = null;
+let sparkleFrame = 0;
+let sparkleDrawn = 0;
+let sparkleDirty = true;
+
+function makeSparkleSprite(tint) {
+  const sprite = document.createElement('canvas');
+  sprite.width = sprite.height = 96;
+  const target = sprite.getContext('2d');
+  target.translate(48, 48);
+  const halo = target.createRadialGradient(0, 0, 0, 0, 0, 48);
+  halo.addColorStop(0, 'rgba(255,255,255,1)');
+  halo.addColorStop(0.12, `rgba(${tint},0.95)`);
+  halo.addColorStop(0.3, `rgba(${tint},0.5)`);
+  halo.addColorStop(0.6, `rgba(${tint},0.14)`);
+  halo.addColorStop(1, `rgba(${tint},0)`);
+  target.fillStyle = halo;
+  target.fillRect(-48, -48, 96, 96);
+  // Four long rays and four short ones, thin and tapering, like light caught on a cut edge.
+  target.fillStyle = '#ffffff';
+  for (let ray = 0; ray < 8; ray++) {
+    const [length, width] = ray % 2 ? [22, 2.2] : [47, 3.4];
+    target.beginPath();
+    target.moveTo(0, -width);
+    target.lineTo(length, 0);
+    target.lineTo(0, width);
+    target.fill();
+    target.rotate(Math.PI / 4);
+  }
+  return sprite;
+}
+
+// A sparse layer of bigger stars and a dense layer of small glints, so thin strokes catch light too.
+// Every spot keeps its place, size and rhythm; it lights up for about a third of its own cycle.
+function makeSparkleSpots() {
+  const random = seededRandom(7);
+  const sprites = ['255,255,255', '255,255,255', '255,240,190', '210,236,255', '255,214,238'].map(makeSparkleSprite);
+  const spots = [];
+  for (const [cell, smallest, largest, slowest] of [[34, 9, 16, 2.8], [110, 34, 64, 4.6]]) {
+    for (let y = 0; y < canvas.height; y += cell) {
+      for (let x = 0; x < canvas.width; x += cell) {
+        spots.push({
+          x: x + random() * cell,
+          y: y + random() * cell,
+          reach: smallest + random() * (largest - smallest),
+          period: slowest - 1.4 + random() * 1.4,
+          phase: random(),
+          lit: 0.26 + random() * 0.1,
+          turn: random() < 0.5 ? 0 : Math.PI / 4,
+          sprite: sprites[Math.floor(random() * sprites.length)],
+        });
+      }
+    }
+  }
+  return spots;
+}
+
+function showsSparkle() {
+  return glitter && hasDrawing && !loading && !document.hidden;
+}
+
+// Called whenever the page, glitter, loading or visibility changes.
+function updateSparkle() {
+  sparkleDirty = true;
+  if (!showsSparkle()) {
+    cancelAnimationFrame(sparkleFrame);
+    sparkleFrame = 0;
+    sparkleCanvas.hidden = true;
+    sparkleContext.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+  sparkleCanvas.hidden = false;
+  sparkleFrame ||= requestAnimationFrame(drawSparkle);
+}
+
+function drawSparkle(now) {
+  sparkleFrame = 0;
+  if (!showsSparkle()) return;
+  // Reduced motion draws one still glow per change; otherwise about 25 frames a second is plenty for a
+  // slow twinkle. A change between strokes (undo, opening) shows in the same frame as the paint.
+  const still = reducedMotion.matches;
+  if (!still) sparkleFrame = requestAnimationFrame(drawSparkle);
+  if (!still && now - sparkleDrawn < 40 && (!sparkleDirty || pointer !== null)) return;
+  if (gallery.open || pagePicker.open) return;
+  sparkleDrawn = now;
+  if (sparkleDirty) {
+    // Paint stacked three times lifts faint pencil, spray and bubble paint, so they can shine too.
+    sparkleDirty = false;
+    sparkleMaskContext.globalCompositeOperation = 'source-over';
+    sparkleMaskContext.clearRect(0, 0, canvas.width, canvas.height);
+    for (let layer = 0; layer < 3; layer++) sparkleMaskContext.drawImage(paintCanvas, 0, 0);
+    sparkleMaskContext.globalCompositeOperation = 'destination-out';
+    sparkleMaskContext.drawImage(outlineCanvas, 0, 0);
+  }
+  sparkleSpots ||= makeSparkleSpots();
+  const time = still ? 0 : now / 1000;
+  const target = sparkleContext;
+  target.clearRect(0, 0, canvas.width, canvas.height);
+  for (const spot of sparkleSpots) {
+    const cycle = (time / spot.period + spot.phase) % 1;
+    if (cycle >= spot.lit) continue;
+    const glow = Math.sin(Math.PI * cycle / spot.lit) ** 2;
+    const reach = spot.reach * (0.5 + 0.5 * glow);
+    const angle = spot.turn + (cycle / spot.lit - 0.5) * 0.3;
+    target.setTransform(Math.cos(angle), Math.sin(angle), -Math.sin(angle), Math.cos(angle), spot.x, spot.y);
+    target.globalAlpha = glow;
+    target.drawImage(spot.sprite, -reach, -reach, reach * 2, reach * 2);
+  }
+  target.setTransform(1, 0, 0, 1, 0, 0);
+  target.globalAlpha = 1;
+  target.globalCompositeOperation = 'destination-in';
+  target.drawImage(sparkleMask, 0, 0);
+  target.globalCompositeOperation = 'source-over';
+}
+
+document.addEventListener('visibilitychange', updateSparkle);
+reducedMotion.addEventListener('change', updateSparkle);
 
 function blankPage(templateId = null, id = newPictureId()) {
   currentId = id;
@@ -220,19 +363,21 @@ function loadPicture(source) {
   }
   loading = true;
   updateStrokeUndo();
+  updateSparkle();
   const image = new Image();
   image.onload = () => {
     blankPage(draft.template, draft.id);
     paintContext.drawImage(image, 0, 0, canvas.width, canvas.height);
     currentPicture = original;
     hasDrawing = draft.hasDrawing !== false;
-    renderPage();
     loading = false;
+    renderPage();
     updateStrokeUndo();
   };
   image.onerror = () => {
     loading = false;
     updateStrokeUndo();
+    updateSparkle();
     say('This picture could not be opened.');
   };
   image.src = draft.paint;
@@ -283,7 +428,115 @@ const partyColors = ['#ed575e', '#f49b38', '#f3ce45', '#57ad74', '#499cde', '#9d
 function makeBrush(type, size, paint, amount = brushAmounts[type] ?? 0) {
   const stamp = stampTypes.includes(type);
   const spacing = Math.max(1, size * (stamp ? amounts[amount][3] : type === 'spray' ? 0.3 : 0.15));
-  return { type, size, color: paint, amount, spacing, untilNext: spacing };
+  return { type, size, color: paint, amount, spacing, untilNext: spacing, glitter: glitter && type !== 'eraser' };
+}
+
+// Glitter is a fixed, seeded material in three repeating tiles: where flecks turn the paint deeper,
+// where they turn it brighter, and white glints with a few sparkles. It is laid over each stroke's own
+// pixels, so it follows every pigment (rainbow bands, flower centers) and never reaches past the paint.
+const glitterSide = 512;
+let glitterTiles = null;
+const glitterPatterns = new WeakMap();
+const glitterScratch = document.createElement('canvas');
+glitterScratch.width = canvas.width;
+glitterScratch.height = canvas.height;
+const glitterScratchContext = glitterScratch.getContext('2d');
+
+function makeGlitterTiles() {
+  const random = seededRandom(20240917);
+  const [deep, bright, glints] = [0, 1, 2].map(() => {
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = glitterSide;
+    return tile.getContext('2d');
+  });
+  // Square, pixel-aligned flecks in two strengths, like cut craft glitter. Crisp edges and few tones
+  // keep saved PNGs small; flecks crossing an edge repeat on the opposite side, so tiles join seamlessly.
+  function fleck(target, x, y, side, paint) {
+    target.fillStyle = paint;
+    for (const dx of [0, -glitterSide]) {
+      for (const dy of [0, -glitterSide]) target.fillRect(x + dx, y + dy, side, side);
+    }
+  }
+  const strength = () => random() < 0.5 ? 0.6 : 1;
+  const iridescent = ['rgba(255,190,225,0.5)', 'rgba(170,230,255,0.5)', 'rgba(255,236,160,0.5)', 'rgba(215,195,255,0.5)'];
+  const cell = 5;
+  for (let y = 0; y < glitterSide; y += cell) {
+    for (let x = 0; x < glitterSide; x += cell) {
+      const side = 2 + Math.floor(random() * 3);
+      const at = [x + Math.floor(random() * (cell - side + 1)), y + Math.floor(random() * (cell - side + 1))];
+      const roll = random();
+      if (roll < 0.18) fleck(deep, ...at, side, `rgba(0,0,0,${strength()})`);
+      else if (roll < 0.48) fleck(bright, ...at, side, `rgba(0,0,0,${strength()})`);
+      else if (roll < 0.6) fleck(glints, ...at, side, 'rgba(255,255,255,0.45)');
+      else if (roll < 0.63) fleck(glints, ...at, side, iridescent[Math.floor(random() * 4)]);
+      else if (roll < 0.67) fleck(glints, ...at, Math.max(1, side - 1), '#ffffff');
+    }
+  }
+  // A few four-pointed sparkles with a soft halo, kept small so the paint stays the star.
+  for (let index = 0; index < 9; index++) {
+    const x = 20 + random() * (glitterSide - 40);
+    const y = 20 + random() * (glitterSide - 40);
+    const reach = 6 + random() * 8;
+    const halo = glints.createRadialGradient(x, y, 0, x, y, reach * 0.6);
+    halo.addColorStop(0, 'rgba(255,255,255,0.85)');
+    halo.addColorStop(1, 'rgba(255,255,255,0)');
+    glints.fillStyle = halo;
+    glints.fillRect(x - reach, y - reach, reach * 2, reach * 2);
+    glints.fillStyle = '#ffffff';
+    glints.beginPath();
+    for (let corner = 0; corner < 8; corner++) {
+      const angle = corner * Math.PI / 4 + Math.PI / 4 * (index % 2);
+      const length = corner % 2 ? reach * 0.14 : reach * (corner % 4 ? 0.6 : 1);
+      glints.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+    }
+    glints.fill();
+  }
+  return { deep: deep.canvas, bright: bright.canvas, glints: glints.canvas };
+}
+
+function glitterPattern(target, tile) {
+  let patterns = glitterPatterns.get(target);
+  if (!patterns) glitterPatterns.set(target, patterns = new Map());
+  if (!patterns.has(tile)) patterns.set(tile, target.createPattern(tile, 'repeat'));
+  return patterns.get(tile);
+}
+
+function fillGlitter(target, tile, left, top, width, height, scale) {
+  target.save();
+  target.scale(scale, scale);
+  target.fillStyle = glitterPattern(target, tile);
+  target.fillRect(left / scale, top / scale, width / scale, height / scale);
+  target.restore();
+}
+
+// Turns plain paint in this rectangle of `target` into glitter. Only colors change: every pixel keeps
+// its alpha, so stroke shapes, see-through bubbles and the undo footprint stay exactly the same.
+// `scale` is how many pixels of `target` one page pixel covers, so the cursor shows true grain.
+function addGlitter(target, left, top, width, height, scale = 1) {
+  glitterTiles ||= makeGlitterTiles();
+  const source = target.canvas;
+  const scratch = glitterScratchContext;
+  target.save();
+  target.setTransform(1, 0, 0, 1, 0, 0);
+  target.globalCompositeOperation = 'source-atop';
+  // Deeper flecks multiply the paint by itself and brighter ones screen it, keeping each color's hue.
+  // A slight shade and lift on top lets white turn silvery and black catch the light too.
+  const passes = [['multiply', glitterTiles.deep, 'rgba(0,0,0,0.18)'], ['screen', glitterTiles.bright, 'rgba(255,255,255,0.12)']];
+  for (const [blend, tile, tint] of passes) {
+    scratch.clearRect(left, top, width, height);
+    scratch.drawImage(source, left, top, width, height, left, top, width, height);
+    scratch.globalCompositeOperation = blend;
+    scratch.drawImage(source, left, top, width, height, left, top, width, height);
+    scratch.globalCompositeOperation = 'source-atop';
+    scratch.fillStyle = tint;
+    scratch.fillRect(left, top, width, height);
+    scratch.globalCompositeOperation = 'destination-in';
+    fillGlitter(scratch, tile, left, top, width, height, scale);
+    scratch.globalCompositeOperation = 'source-over';
+    target.drawImage(glitterScratch, left, top, width, height, left, top, width, height);
+  }
+  fillGlitter(target, glitterTiles.glints, left, top, width, height, scale);
+  target.restore();
 }
 
 // One shape filling a circle of `radius` around the origin.
@@ -407,6 +660,7 @@ function drawBrushPreview(preview, type, size, opacity) {
     paintLine(target, previous, next, brush);
     previous = next;
   }
+  if (brush.glitter) addGlitter(target, 0, 0, preview.width, preview.height);
   // Fade the completed stroke once, just like the drawing canvas.
   target.save();
   target.globalCompositeOperation = 'destination-in';
@@ -440,7 +694,9 @@ function updateBrushPreview() {
       const target = picture.getContext('2d');
       target.setTransform(1, 0, 0, 1, 0, 0);
       target.clearRect(0, 0, picture.width, picture.height);
-      dab(target, picture.width / 2, picture.height / 2, makeBrush(brushType, picture.width * 0.6, color, amount));
+      const brush = makeBrush(brushType, picture.width * 0.6, color, amount);
+      dab(target, picture.width / 2, picture.height / 2, brush);
+      if (brush.glitter) addGlitter(target, 0, 0, picture.width, picture.height);
       picture.parentElement.setAttribute('aria-pressed', String(amount === brushAmounts[brushType]));
     });
   }
@@ -480,7 +736,7 @@ for (const [type, name] of brushTypes) {
   }
   button.addEventListener('click', () => {
     brushType = type;
-    document.querySelectorAll('.brush-choice').forEach((choice) => {
+    document.querySelectorAll('.brush-choice:not(.glitter-choice)').forEach((choice) => {
       choice.setAttribute('aria-pressed', String(choice === button));
     });
     updateBrushPreview();
@@ -488,6 +744,16 @@ for (const [type, name] of brushTypes) {
   });
   document.querySelector('#brushes').append(button);
 }
+// Glitter changes the paint of every brush except the eraser. The sheet stays open to show it.
+const glitterButton = document.querySelector('#glitter-button');
+glitterButton.addEventListener('click', () => {
+  glitter = !glitter;
+  glitterButton.setAttribute('aria-pressed', String(glitter));
+  brushButton.classList.toggle('glitter', glitter);
+  updateBrushPreview();
+  updateSparkle();
+});
+document.querySelector('#brushes').append(glitterButton);
 brushSize.addEventListener('input', updateBrushPreview);
 brushOpacity.addEventListener('input', updateBrushPreview);
 updateBrushPreview();
@@ -536,7 +802,7 @@ function refreshBrushCursor() {
   const scale = bounds.width / canvas.width;
   const extent = brush.size * (stampTypes.includes(brush.type) || brush.type === 'spray' ? 1.5 : brush.type === 'rainbow' || brush.type === 'marker' ? 1.06 : 1);
   const side = extent * scale + 12;
-  const key = `${brush.type}-${brush.amount}-${brush.size}-${brush.color}-${opacity}-${scale}`;
+  const key = `${brush.type}-${brush.amount}-${brush.size}-${brush.color}-${brush.glitter}-${opacity}-${scale}`;
   if (key !== cursorTipKey) {
     cursorTipKey = key;
     const target = brushCursor.getContext('2d');
@@ -545,6 +811,7 @@ function refreshBrushCursor() {
     target.setTransform(256 / logicalSide, 0, 0, 256 / logicalSide, 0, 0);
     target.clearRect(0, 0, logicalSide, logicalSide);
     dab(target, middle, middle, { ...brush, color: brush.type === 'eraser' ? '#ffffff' : brush.color });
+    if (brush.glitter) addGlitter(target, 0, 0, 256, 256, 256 / logicalSide);
     target.save();
     target.globalCompositeOperation = 'destination-in';
     target.globalAlpha = opacity;
@@ -583,7 +850,16 @@ function renderStroke() {
   clipColoringRegion(paintContext, activeTemplate, activeRegion);
   paintContext.globalAlpha = strokeOpacity;
   paintContext.globalCompositeOperation = activeBrush.type === 'eraser' ? 'destination-out' : 'source-over';
-  paintContext.drawImage(strokeCanvas, 0, 0);
+  if (activeBrush.glitter) {
+    // Flecks belong to fixed page spots, so painted glitter holds still and overlapping strokes join.
+    const { left, top, width, height } = strokeArea();
+    glitterContext.clearRect(left, top, width, height);
+    glitterContext.drawImage(strokeCanvas, left, top, width, height, left, top, width, height);
+    addGlitter(glitterContext, left, top, width, height);
+    paintContext.drawImage(glitterCanvas, left, top, width, height, left, top, width, height);
+  } else {
+    paintContext.drawImage(strokeCanvas, 0, 0);
+  }
   paintContext.restore();
   renderPage();
 }
@@ -610,6 +886,7 @@ function startStroke(event) {
   strokeContext.clearRect(0, 0, canvas.width, canvas.height);
   strokeOpacity = Number(brushOpacity.value) / 100;
   activeBrush = makeBrush(brushType, Number(brushSize.value), color);
+  if (activeBrush.glitter) glitterContext.clearRect(0, 0, canvas.width, canvas.height);
   dab(strokeContext, lastPoint.x, lastPoint.y, activeBrush);
   strokeBounds = { left: lastPoint.x, top: lastPoint.y, right: lastPoint.x, bottom: lastPoint.y };
   renderStroke();
@@ -631,12 +908,17 @@ function samePixels(left, right) {
 }
 
 // Every dab stays within about one brush size of its center (hearts reach furthest), plus antialiasing.
-function rememberStroke() {
+function strokeArea() {
   const reach = Math.ceil(activeBrush.size * 1.25) + 4;
   const left = Math.max(0, Math.floor(strokeBounds.left - reach));
   const top = Math.max(0, Math.floor(strokeBounds.top - reach));
   const width = Math.min(canvas.width, Math.ceil(strokeBounds.right + reach)) - left;
   const height = Math.min(canvas.height, Math.ceil(strokeBounds.bottom + reach)) - top;
+  return { left, top, width, height };
+}
+
+function rememberStroke() {
+  const { left, top, width, height } = strokeArea();
   if (width <= 0 || height <= 0) return;
   const before = baseContext.getImageData(left, top, width, height);
   // Erasing blank paper or painting fully outside the start region changes nothing to undo.

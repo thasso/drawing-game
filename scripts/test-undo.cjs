@@ -188,6 +188,8 @@ function tab(env, { deferImages = false } = {}) {
   };
   const sandbox = {
     document, localStorage: env.storage, navigator: { locks: env.locks }, console,
+    matchMedia: () => ({ matches: false, addEventListener() {} }),
+    requestAnimationFrame: () => 1, cancelAnimationFrame() {},
     Path2D: class { constructor(data) { this.data = data; } rect() {} addPath() {} },
     ResizeObserver: class { observe() {} },
     Image: class {
