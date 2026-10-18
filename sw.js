@@ -1,4 +1,4 @@
-const cacheName = 'little-sketchbook-v9';
+const cacheName = 'little-sketchbook-v11';
 const appFiles = ['./', './index.html', './style.css', './coloring.js', './app.js'];
 
 self.addEventListener('install', (event) => {

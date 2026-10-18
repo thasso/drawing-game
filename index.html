@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#d9eff8">
+    <meta name="theme-color" content="#ffffff">
     <title>Little sketchbook</title>
     <link rel="stylesheet" href="./style.css">
     <script src="./coloring.js" defer></script>
@@ -11,50 +11,61 @@
   </head>
   <body>
     <main class="sketchbook">
-      <header>
-        <h1>Little sketchbook<span aria-hidden="true">✳</span></h1>
+      <header class="top-bar">
         <button id="gallery-button" class="quiet-button icon-button" aria-label="My pictures" title="My pictures">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="16" height="16" rx="2"/><path d="M17 23H3a2 2 0 0 1-2-2V7M5 15l5-5 4 4 3-3 4 4"/><circle cx="16" cy="7" r="1"/></svg>
         </button>
+        <h1>Little sketchbook<span aria-hidden="true">✳</span></h1>
+        <div class="picture-actions">
+          <button id="undo-delete" class="quiet-button icon-button" aria-label="Undo delete" title="Undo delete" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 4 9l5 5M4 9h10a7 7 0 0 1 0 14"/></svg>
+          </button>
+          <button id="delete-button" class="quiet-button icon-button delete-button" aria-label="Delete picture" title="Delete picture">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>
+          </button>
+          <button id="new-button" class="quiet-button icon-button" aria-label="New page" title="New page">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M12 12v6M9 15h6"/></svg>
+          </button>
+        </div>
       </header>
 
       <section class="drawing-area" aria-label="Drawing area">
         <div class="paper">
-          <canvas id="canvas" width="1200" height="1200" aria-label="Draw here with your finger, pen, or mouse"></canvas>
+          <canvas id="canvas" width="1200" height="1200" aria-label="Draw here with your finger, pen, or mouse. Pinch with two fingers to zoom."></canvas>
         </div>
+        <p id="status" role="status"></p>
       </section>
 
-      <footer>
-        <div id="brushes" class="brushes" role="group" aria-label="Brush types"></div>
-        <div id="palette" class="palette" role="group" aria-label="Paint colors"></div>
-        <div class="brush-controls">
-          <canvas id="brush-preview" class="brush-preview" width="240" height="240" role="img" aria-label="Brush preview"></canvas>
-          <div class="brush-sliders">
-            <label class="brush-control" title="Brush size">
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="4" cy="12" r="2"/><circle cx="17" cy="12" r="6"/></svg>
-              <input id="brush-size" type="range" min="4" max="100" step="2" value="16" aria-label="Brush size">
-            </label>
-            <label class="brush-control" title="Opacity">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2S4 10 4 15a8 8 0 0 0 16 0c0-5-8-13-8-13Z"/><path d="M12 2v21a8 8 0 0 0 8-8c0-5-8-13-8-13Z" fill="currentColor" stroke="none"/></svg>
-              <input id="brush-opacity" type="range" min="10" max="100" step="5" value="100" aria-label="Opacity">
-            </label>
+      <nav class="dock" aria-label="Drawing tools">
+        <button id="brush-button" class="dock-button" aria-label="Brushes" title="Brushes" aria-expanded="false" aria-controls="brush-sheet">
+          <canvas id="brush-button-preview" width="120" height="120" aria-hidden="true"></canvas>
+        </button>
+        <div id="brush-sheet" class="sheet" hidden>
+          <div id="brushes" class="brushes" role="group" aria-label="Brush types"></div>
+          <div class="brush-controls">
+            <canvas id="brush-preview" class="brush-preview" width="240" height="240" role="img" aria-label="Brush preview"></canvas>
+            <div class="brush-sliders">
+              <label class="brush-control" title="Brush size">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="4" cy="12" r="2"/><circle cx="17" cy="12" r="6"/></svg>
+                <input id="brush-size" type="range" min="4" max="100" step="2" value="16" aria-label="Brush size">
+              </label>
+              <label class="brush-control" title="Opacity">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2S4 10 4 15a8 8 0 0 0 16 0c0-5-8-13-8-13Z"/><path d="M12 2v21a8 8 0 0 0 8-8c0-5-8-13-8-13Z" fill="currentColor" stroke="none"/></svg>
+                <input id="brush-opacity" type="range" min="10" max="100" step="5" value="100" aria-label="Opacity">
+              </label>
+            </div>
           </div>
         </div>
-        <div class="actions">
-          <button id="new-button" class="quiet-button icon-button" aria-label="New page" title="New page">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M12 12v6M9 15h6"/></svg>
-          </button>
-          <p id="status" role="status">Make something yours.</p>
-          <div class="picture-actions">
-            <button id="undo-delete" class="quiet-button icon-button" aria-label="Undo delete" title="Undo delete" hidden>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 4 9l5 5M4 9h10a7 7 0 0 1 0 14"/></svg>
-            </button>
-            <button id="delete-button" class="quiet-button icon-button delete-button" aria-label="Delete picture" title="Delete picture">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>
-            </button>
-          </div>
+        <button id="color-button" class="dock-button" aria-label="Colors" title="Colors" aria-expanded="false" aria-controls="color-sheet">
+          <span class="current-color" aria-hidden="true"></span>
+        </button>
+        <div id="color-sheet" class="sheet" hidden>
+          <div id="palette" class="palette" role="group" aria-label="Paint colors"></div>
         </div>
-      </footer>
+        <button id="fit-button" class="dock-button" aria-label="Show whole page" title="Show whole page" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/><rect x="8" y="8" width="8" height="8" rx="1.5"/></svg>
+        </button>
+      </nav>
     </main>
 
     <dialog id="page-picker" aria-labelledby="page-picker-title">

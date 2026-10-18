@@ -34,6 +34,8 @@ let color = colors[5][1];
 let brushType = 'round';
 let activeBrush = null;
 let pointer = null;
+let pointerType = null;
+let hadDrawing = false;
 let lastPoint = null;
 let loading = false;
 let hasDrawing = false;
@@ -230,8 +232,12 @@ function drawBrushPreview(preview, type, size, opacity) {
 }
 
 const brushPreview = document.querySelector('#brush-preview');
+const brushButtonPreview = document.querySelector('#brush-button-preview');
+const colorButton = document.querySelector('#color-button');
 function updateBrushPreview() {
   drawBrushPreview(brushPreview, brushType, Number(brushSize.value) / 3, Number(brushOpacity.value) / 100);
+  drawBrushPreview(brushButtonPreview, brushType, Number(brushSize.value) / 3, Number(brushOpacity.value) / 100);
+  colorButton.style.setProperty('--paint', color);
   document.querySelectorAll('.brush-choice canvas').forEach((preview) => {
     drawBrushPreview(preview, preview.dataset.brush, 22, 1);
   });
@@ -258,6 +264,7 @@ for (const [type, name] of brushTypes) {
       choice.setAttribute('aria-pressed', String(choice === button));
     });
     updateBrushPreview();
+    showSheet(null);
   });
   document.querySelector('#brushes').append(button);
 }
@@ -277,6 +284,7 @@ for (const [name, paint] of colors) {
     document.querySelectorAll('.swatch').forEach((swatch) => {
       swatch.setAttribute('aria-pressed', String(swatch === button));
     });
+    showSheet(null);
   });
   document.querySelector('#palette').append(button);
 }
@@ -301,10 +309,11 @@ function renderStroke() {
   renderPage();
 }
 
-canvas.addEventListener('pointerdown', (event) => {
+function startStroke(event) {
   if (loading || pointer !== null || event.button !== 0) return;
   event.preventDefault();
   pointer = event.pointerId;
+  pointerType = event.pointerType;
   canvas.setPointerCapture(pointer);
   lastPoint = point(event);
   activeRegion = -1;
@@ -323,11 +332,109 @@ canvas.addEventListener('pointerdown', (event) => {
   activeBrush = makeBrush(brushType, Number(brushSize.value), color);
   dab(strokeContext, lastPoint.x, lastPoint.y, activeBrush);
   renderStroke();
+  hadDrawing = hasDrawing;
   hasDrawing = true;
-  say('Drawing…');
+}
+
+// A second finger turns the touch into a pinch: drop the provisional paint before anything is saved.
+function cancelStroke() {
+  pointer = null;
+  paintContext.clearRect(0, 0, canvas.width, canvas.height);
+  paintContext.drawImage(baseCanvas, 0, 0);
+  hasDrawing = hadDrawing;
+  renderPage();
+}
+
+function finishStroke(event) {
+  if (event.pointerId !== pointer) return;
+  pointer = null;
+  saveCurrentPicture();
+}
+
+// Zoom and pan only move the paper on screen; the canvas pixels stay 1200 square.
+const stage = document.querySelector('.drawing-area');
+const paper = document.querySelector('.paper');
+const fitButton = document.querySelector('#fit-button');
+const maxZoom = 5;
+const touches = new Map();
+let gesture = null;
+let view = { scale: 1, x: 0, y: 0 };
+
+function setView(scale, x, y) {
+  const fit = (offset, start, size, space) => size <= space
+    ? (space - size) / 2 - start
+    : Math.min(-start, Math.max(space - size - start, offset));
+  view = {
+    scale,
+    x: fit(x, paper.offsetLeft, paper.offsetWidth * scale, stage.clientWidth),
+    y: fit(y, paper.offsetTop, paper.offsetHeight * scale, stage.clientHeight),
+  };
+  paper.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+  fitButton.hidden = view.scale === 1;
+}
+
+// Keep the spot of paper that was under `from` (in the `base` view) under `to`.
+function zoomTo(scale, from, to, base) {
+  const bounds = stage.getBoundingClientRect();
+  const originX = bounds.left + paper.offsetLeft;
+  const originY = bounds.top + paper.offsetTop;
+  const next = Math.min(maxZoom, Math.max(1, scale)) < 1.03 ? 1 : Math.min(maxZoom, scale);
+  const paperX = (from.x - originX - base.x) / base.scale;
+  const paperY = (from.y - originY - base.y) / base.scale;
+  setView(next, to.x - originX - paperX * next, to.y - originY - paperY * next);
+}
+
+function touchCenter() {
+  const [first, second] = [...touches.values()];
+  if (!second) return { center: first, distance: 0 };
+  return {
+    center: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+    distance: Math.hypot(second.x - first.x, second.y - first.y),
+  };
+}
+
+function anchorGesture() {
+  paper.classList.remove('settling');
+  gesture = { ...touchCenter(), view: { ...view } };
+}
+
+function moveGesture() {
+  const { center, distance } = touchCenter();
+  const scale = gesture.distance && distance ? gesture.view.scale * distance / gesture.distance : gesture.view.scale;
+  zoomTo(scale, gesture.center, center, gesture.view);
+}
+
+stage.addEventListener('pointerdown', (event) => {
+  if (event.pointerType === 'touch') {
+    // Ignore a resting hand while a pen or mouse is drawing.
+    if (pointer !== null && pointerType !== 'touch') return;
+    if (event.isPrimary) {
+      touches.clear();
+      gesture = null;
+    }
+    touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    // Fingers that close a sheet or join another finger only move the view, never paint.
+    if (openSheet || gesture || touches.size > 1) {
+      showSheet(null);
+      if (pointer !== null) cancelStroke();
+      anchorGesture();
+      return;
+    }
+  } else if (openSheet) {
+    showSheet(null);
+    return;
+  }
+  if (event.target === canvas) startStroke(event);
 });
 
-canvas.addEventListener('pointermove', (event) => {
+stage.addEventListener('pointermove', (event) => {
+  if (touches.has(event.pointerId)) {
+    touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (gesture) {
+      moveGesture();
+      return;
+    }
+  }
   if (event.pointerId !== pointer) return;
   const points = event.getCoalescedEvents?.() || [event];
   for (const sample of points.length ? points : [event]) {
@@ -338,14 +445,60 @@ canvas.addEventListener('pointermove', (event) => {
   renderStroke();
 });
 
-function finishStroke(event) {
-  if (event.pointerId !== pointer) return;
-  pointer = null;
-  saveCurrentPicture();
+function releasePointer(event) {
+  if (touches.delete(event.pointerId) && gesture) {
+    // Painting waits until every gesture finger is up.
+    if (touches.size) anchorGesture();
+    else gesture = null;
+    return;
+  }
+  finishStroke(event);
 }
-canvas.addEventListener('pointerup', finishStroke);
-canvas.addEventListener('pointercancel', finishStroke);
-canvas.addEventListener('lostpointercapture', finishStroke);
+stage.addEventListener('pointerup', releasePointer);
+stage.addEventListener('pointercancel', releasePointer);
+stage.addEventListener('lostpointercapture', releasePointer);
+
+stage.addEventListener('wheel', (event) => {
+  event.preventDefault();
+  if (pointer !== null || gesture) return;
+  const at = { x: event.clientX, y: event.clientY };
+  const delta = event.deltaY * (event.deltaMode === 1 ? 16 : 1);
+  paper.classList.remove('settling');
+  zoomTo(view.scale * Math.exp(-delta * (event.ctrlKey ? 0.01 : 0.002)), at, at, view);
+}, { passive: false });
+
+fitButton.addEventListener('click', () => {
+  paper.classList.add('settling');
+  setView(1, 0, 0);
+});
+paper.addEventListener('transitionend', () => paper.classList.remove('settling'));
+new ResizeObserver(() => setView(view.scale, view.x, view.y)).observe(stage);
+// Safari still pinch-zooms the whole page unless its own gesture events are stopped.
+document.addEventListener('gesturestart', (event) => event.preventDefault());
+
+const dock = document.querySelector('.dock');
+const sheets = {
+  brush: [document.querySelector('#brush-button'), document.querySelector('#brush-sheet')],
+  color: [colorButton, document.querySelector('#color-sheet')],
+};
+let openSheet = null;
+function showSheet(name) {
+  for (const [key, [button, sheet]] of Object.entries(sheets)) {
+    if (key !== name && sheet.contains(document.activeElement)) button.focus();
+    button.setAttribute('aria-expanded', String(key === name));
+    sheet.hidden = key !== name;
+  }
+  openSheet = name;
+}
+for (const [key, [button]] of Object.entries(sheets)) {
+  button.addEventListener('click', () => showSheet(openSheet === key ? null : key));
+}
+document.addEventListener('pointerdown', (event) => {
+  if (openSheet && !dock.contains(event.target) && !stage.contains(event.target)) showSheet(null);
+}, true);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && openSheet) showSheet(null);
+});
 
 function saveCurrentPicture() {
   if (loading || pointer !== null) return false;
