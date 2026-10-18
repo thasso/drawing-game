@@ -18,6 +18,12 @@ Open **My Pictures** and use a picture's trash button to delete it. The undo arr
 
 On coloring pages, each stroke stays in the region where it starts. Outlines stay above the paint. The eraser removes paint without removing the outline. Saved coloring pages retain separate paint and outline layers so they can be reopened and edited.
 
+## GitHub Pages deployment
+
+The expected public site URL is https://thasso.github.io/drawing-game/. Before the first deployment, make the repository public and set **Settings → Pages → Build and deployment → Source** to **GitHub Actions**. The workflow validates and packages the static app on pull requests to `main`; it deploys after each push to `main` and on a manually dispatched run from `main`. It stages only the runtime files and `icons/` folder—no repository root or development files are published.
+
+GitHub Pages serves this project under `/drawing-game/`; app asset URLs are relative so the install and offline cache work below that path. Drawings created in an HTTP preview stay in that preview origin's browser storage and do not migrate to GitHub Pages.
+
 ## Install on iPhone or iPad
 
 1. Host this directory on any HTTPS static host. Keep every file and the `icons/` folder. No server-side application or build step is needed.
