@@ -79,6 +79,8 @@ function tab(env, name, { locks = true, deferImages = false, eventPaint = false 
   };
   const sandbox = {
     document, localStorage: env.storage, navigator: locks ? { locks: env.locks } : {}, console,
+    matchMedia: () => ({ matches: false, addEventListener() {} }),
+    requestAnimationFrame: () => 1, cancelAnimationFrame() {},
     Path2D: class { rect() {} addPath() {} }, ResizeObserver: class { observe() {} },
     Image: class {
       set src(value) {
